@@ -9,8 +9,8 @@ def get_parser():
     Returns base parser for scripts
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--benchmark', help='Path to the benchmark trace')
-    parser.add_argument('--model-path', help='Path to save model checkpoint')
+    parser.add_argument('--benchmark', help='Path to the benchmark trace', required=True)
+    parser.add_argument('--model-path', help='Path to save model checkpoint', required=True)
     parser.add_argument('--debug', action='store_true', default=False, help='Faster epochs for debugging')
     parser.add_argument('--config', default='./configs/base.yaml', help='Path to configuration file for the model')
     parser.add_argument('--print-every', type=int, default=None, help='Print updates every this number of steps. Make sure to set when outputting to a file')
