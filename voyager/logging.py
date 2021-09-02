@@ -27,10 +27,9 @@ class NBatchLogger(tf.keras.callbacks.Callback):
         metrics_log = ''
 
         for (k, v) in self.metric_cache.items():
-            val = v
-            if abs(val) > 1e-3:
-                metrics_log += ' - %s: %.4f' % (k, val)
+            if abs(v) > 1e-3:
+                metrics_log += ' - %s: %.4f' % (k, v)
             else:
-                metrics_log += ' - %s: %.4e' % (k, val)
+                metrics_log += ' - %s: %.4e' % (k, v)
 
         print('step: {}/{} ... {}'.format(self.step, self.params['steps'], metrics_log))
