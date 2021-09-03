@@ -4,19 +4,21 @@ import subprocess, re
 import attrdict
 import yaml
 
+
 def get_parser():
     '''
     Returns base parser for scripts
     '''
     parser = argparse.ArgumentParser()
     parser.add_argument('--benchmark', help='Path to the benchmark trace', required=True)
-    parser.add_argument('--model-path', help='Path to save model checkpoint', required=True)
+    parser.add_argument('--model-path', help='Path to save model checkpoint. If not provided, the model checkpointing is skipped.')
     parser.add_argument('--debug', action='store_true', default=False, help='Faster epochs for debugging')
     parser.add_argument('--config', default='./configs/base.yaml', help='Path to configuration file for the model')
     parser.add_argument('--print-every', type=int, default=None, help='Print updates every this number of steps. Make sure to set when outputting to a file')
     parser.add_argument('--tb-path', help='Path to save TensorBoard logs')
 
     return parser
+
 
 def load_config(config_path, debug=False):
     '''
@@ -32,14 +34,15 @@ def load_config(config_path, debug=False):
 
     return config
 
-# From https://stackoverflow.com/questions/41634674/tensorflow-on-shared-gpus-how-to-automatically-select-the-one-that-is-unused
 
+# From https://stackoverflow.com/questions/41634674/tensorflow-on-shared-gpus-how-to-automatically-select-the-one-that-is-unused
 def run_command(cmd):
     '''
     Run command, return output as string.
     '''
     output = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True).communicate()[0]
     return output.decode('ascii')
+
 
 def list_available_gpus():
     '''
@@ -56,6 +59,7 @@ def list_available_gpus():
         result.append(int(m.group('gpu_id')))
 
     return result
+
 
 def gpu_memory_map():
     '''
@@ -78,6 +82,7 @@ def gpu_memory_map():
         result[gpu_id] += gpu_memory
 
     return result
+
 
 def pick_gpu_lowest_memory():
     '''

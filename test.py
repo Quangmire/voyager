@@ -25,6 +25,8 @@ def main():
     parser = get_parser()
     args = parser.parse_args()
 
+    assert args.model_path, 'No model path provided. Please provide a path to --model-path.'
+
     # Parse config file
     config = load_config(args.config, args.debug)
     print(config)

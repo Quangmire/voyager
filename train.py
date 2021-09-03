@@ -43,18 +43,39 @@ def main():
 
     # Set-up callbacks for training
     callbacks = []
-    if args.print_every is not None:
-        callbacks = [NBatchLogger(args.print_every)]
 
+    # Set-up batch logger callback.
+    if args.print_every is not None:
+        callbacks.append(
+            NBatchLogger(args.print_every)
+        )
+
+    # Set-up model checkpoint callback.
+    if args.model_path:
+        callbacks.append(
+            tf.keras.callbacks.ModelCheckpoint(
+                filepath=args.model_path,
+                save_weights_only=True,
+                monitor='val_acc',
+                mode='max',
+                save_best_only=True,
+                verbose=1,
+        ))
+    else:
+        print('Notice: Not checkpointing the model. To do so, please provide a path to --model-path.')
+
+    # Set-up Tensorboard callback.
+    if args.tb_path:
+        callbacks.append(
+            tf.keras.callbacks.TensorBoard(
+                log_dir=tb_path,
+                histogram_freq=1
+        ))
+    else:
+        print('Notice: Not logging to Tensorboard. To do so, please provide a path to --tb-path.')
+
+    # Set-up learning rate callbacks (plus anything else).
     callbacks.extend([
-        tf.keras.callbacks.ModelCheckpoint(
-            filepath=args.model_path,
-            save_weights_only=True,
-            monitor='val_acc',
-            mode='max',
-            save_best_only=True,
-            verbose=1,
-        ),
         tf.keras.callbacks.ReduceLROnPlateau(
             monitor='val_acc',
             factor=1 / config.learning_rate_decay,
@@ -64,10 +85,7 @@ def main():
             min_lr=config.min_learning_rate,
             min_delta=0.005,
         ),
-        tf.keras.callbacks.TensorBoard(
-            log_dir=tb_path,
-            histogram_freq=1
-        ),
+        
     ])
 
     model.fit(
