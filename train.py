@@ -1,25 +1,27 @@
 import os
 
-# Reduce extraneous TensorFlow output
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
 import numpy as np
 import tensorflow as tf
-
-# For reproducibility
-tf.random.set_seed(0)
-np.random.seed(0)
 
 from voyager.data_loader import read_benchmark_trace
 from voyager.logging import NBatchLogger
 from voyager.models import HierarchicalLSTM
 from voyager.utils import get_parser, load_config, pick_gpu_lowest_memory
 
+
+# For reproducibility
+tf.random.set_seed(0)
+np.random.seed(0)
+
+# Reduce extraneous TensorFlow output
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 # Select the lowest utilization GPU if not preset
 if 'CUDA_VISIBLE_DEVICES' not in os.environ:
     gpu = pick_gpu_lowest_memory()
     print(os.uname(), gpu)
     os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
+
 
 def main():
     parser = get_parser()
@@ -32,6 +34,9 @@ def main():
     # Load and process benchmark
     benchmark = read_benchmark_trace(args.benchmark)
     train_ds, valid_ds, test_ds = benchmark.split(config)
+
+    # Set TensorBoard log path
+    tb_path = args.tb_path
 
     # Create and compile the model
     model = HierarchicalLSTM.compile_model(config, benchmark.num_pcs(), benchmark.num_pages())
@@ -59,6 +64,10 @@ def main():
             min_lr=config.min_learning_rate,
             min_delta=0.005,
         ),
+        tf.keras.callbacks.TensorBoard(
+            log_dir=tb_path,
+            histogram_freq=1
+        ),
     ])
 
     model.fit(
@@ -69,6 +78,7 @@ def main():
         verbose='auto' if args.print_every is None else 2,
         callbacks=callbacks,
     )
+
 
 if __name__ == '__main__':
     main()
