@@ -58,10 +58,18 @@ class BenchmarkTrace:
     def num_pages(self):
         return len(self.page_mapping)
 
+    def _split_idx(self, config):
+        # Computing end of train and validation splits
+        train_split = int(config.train_split * (len(self.data) - config.sequence_length)) + config.sequence_length
+        valid_split = int((config.train_split + config.valid_split) * (len(self.data) - config.sequence_length)) + config.sequence_length
+
+        return train_split, valid_split
+
     def split(self, config):
         '''
         Splits the trace data into train / valid / test datasets
         '''
+        train_split, valid_split = self._split_idx(config)
 
         def mapper(idx):
             '''
@@ -93,15 +101,11 @@ class BenchmarkTrace:
             else:
                 return tf.concat([pc_hist, page_hist, offset_hist], axis=-1), tf.cast([self.data[end, 1], self.data[end, 2]], "int64")
 
-        # Computing end of train and validation splits
-        train_split = int(config.train_split * (len(self.data) - config.sequence_length)) + config.sequence_length
-        valid_split = int((config.train_split + config.valid_split) * (len(self.data) - config.sequence_length)) + config.sequence_length
-
         # Put together the datasets
         train_ds = (tf.data.Dataset.range(config.sequence_length, train_split)
             .map(mapper)
             .shuffle(config.batch_size * config.steps_per_epoch, seed=0)
-            .repeat(config.num_epochs)
+            .repeat(config.num_epochs * config.steps_per_epoch)
             .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
         )
 

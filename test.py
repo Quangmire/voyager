@@ -44,9 +44,12 @@ def main():
 
     model.evaluate(
         test_ds,
-        verbose='auto' if args.print_every is None else 2,
+        verbose=1 if args.print_every is None else 0,
         callbacks=callbacks,
     )
+
+    if callbacks is not None:
+        callbacks[0].print()
 
 if __name__ == '__main__':
     main()
