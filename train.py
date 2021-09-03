@@ -35,9 +35,6 @@ def main():
     benchmark = read_benchmark_trace(args.benchmark)
     train_ds, valid_ds, test_ds = benchmark.split(config)
 
-    # Set TensorBoard log path
-    tb_path = args.tb_path
-
     # Create and compile the model
     model = HierarchicalLSTM.compile_model(config, benchmark.num_pcs(), benchmark.num_pages())
 
@@ -65,14 +62,14 @@ def main():
         print('Notice: Not checkpointing the model. To do so, please provide a path to --model-path.')
 
     # Set-up Tensorboard callback.
-    if args.tb_path:
+    if args.tb_dir:
         callbacks.append(
             tf.keras.callbacks.TensorBoard(
-                log_dir=tb_path,
+                log_dir=args.tb_dir,
                 histogram_freq=1
         ))
     else:
-        print('Notice: Not logging to Tensorboard. To do so, please provide a path to --tb-path.')
+        print('Notice: Not logging to Tensorboard. To do so, please provide a directory to --tb-dir.')
 
     # Set-up learning rate callbacks (plus anything else).
     callbacks.extend([

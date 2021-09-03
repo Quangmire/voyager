@@ -40,9 +40,23 @@ def main():
     model.load(args.model_path)
 
     # Set-up callbacks for testing
-    callbacks = None
+    callbacks = []
+
+    # Set-up batch logger callback.
     if args.print_every is not None:
-        callbacks = [NBatchLogger(args.print_every)]
+        callbacks.append(
+            [NBatchLogger(args.print_every)]
+        )
+
+    # Set up Tensorboard callback.
+    if args.tb_dir:
+        callbacks.append(
+            tf.keras.callbacks.TensorBoard(
+                log_dir=args.tb_dir,
+                histogram_freq=1
+        ))
+    else:
+        print('Notice: Not logging to Tensorboard. To do so, please provide a directory to --tb-dir.')
 
     model.evaluate(
         test_ds,
@@ -50,7 +64,7 @@ def main():
         callbacks=callbacks,
     )
 
-    if callbacks is not None:
+    if callbacks != [] and args.print_every is not None:
         callbacks[0].print()
 
 if __name__ == '__main__':
