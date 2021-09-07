@@ -1,5 +1,7 @@
 import argparse
-import subprocess, re
+import re
+import shutil
+import subprocess
 
 import attrdict
 import yaml
@@ -35,7 +37,7 @@ def load_config(config_path, debug=False):
     return config
 
 
-# From https://stackoverflow.com/questions/41634674/tensorflow-on-shared-gpus-how-to-automatically-select-the-one-that-is-unused
+# Modified from https://stackoverflow.com/questions/41634674/tensorflow-on-shared-gpus-how-to-automatically-select-the-one-that-is-unused
 def run_command(cmd):
     '''
     Run command, return output as string.
@@ -88,6 +90,9 @@ def pick_gpu_lowest_memory():
     '''
     Returns GPU with the least allocated memory
     '''
+    if shutil.which('nvidia-smi') is None:
+        return ''
+
     memory_gpu_map = [(memory, gpu_id) for (gpu_id, memory) in gpu_memory_map().items()]
     best_memory, best_gpu = sorted(memory_gpu_map)[0]
 
