@@ -1,5 +1,8 @@
 import os
 
+# Reduce extraneous TensorFlow output
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 import numpy as np
 import tensorflow as tf
 
@@ -12,9 +15,6 @@ from voyager.utils import get_parser, load_config, pick_gpu_lowest_memory
 # For reproducibility
 tf.random.set_seed(0)
 np.random.seed(0)
-
-# Reduce extraneous TensorFlow output
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # Select the lowest utilization GPU if not preset
 if 'CUDA_VISIBLE_DEVICES' not in os.environ:
