@@ -4,10 +4,30 @@ from voyager.losses import HierarchicalSequenceLoss, HierarchicalCrossEntropyWit
 from voyager.metrics import OffsetHierarchicalAccuracy, OverallHierarchicalAccuracy, PageHierarchicalAccuracy
 
 
+class Stateless:
+    '''
+    Stateless dropout implementation for reproducible dropout
+    '''
+
+    @staticmethod
+    def dropout_input(x, rate, seed, training):
+        # Testing -> no dropout
+        if not training:
+            return x
+        # Training -> Stateless dropout
+        keep_mask = tf.cast(tf.random.stateless_uniform(tf.shape(x), seed=seed) >= rate, dtype=x.dtype)
+        return x * keep_mask
+
+
 class HierarchicalLSTM(tf.keras.Model):
 
     def __init__(self, config, pc_vocab_size, page_vocab_size):
         super(HierarchicalLSTM, self).__init__()
+        # Needed for stateless dropout seed
+        self.steps_per_epoch = config.steps_per_epoch
+        self.step = 0
+        self.epoch = 1
+
         # Model params
         self.offset_size = 64
         self.pc_embed_size = config.pc_embed_size
@@ -40,14 +60,12 @@ class HierarchicalLSTM(tf.keras.Model):
                 tf.keras.layers.LSTM(
                     self.lstm_size,
                     return_sequences=True,
-                    dropout=self.dropout,
                 ) for i in range(self.num_layers)
             ])
             self.fine_layers = tf.keras.Sequential([
                 tf.keras.layers.LSTM(
                     self.lstm_size,
                     return_sequences=True,
-                    dropout=self.dropout,
                 ) for i in range(self.num_layers)
             ])
         else:
@@ -55,20 +73,30 @@ class HierarchicalLSTM(tf.keras.Model):
                 tf.keras.layers.LSTM(
                     self.lstm_size,
                     return_sequences=(i != self.num_layers - 1),
-                    dropout=self.dropout,
                 ) for i in range(self.num_layers)
             ])
             self.fine_layers = tf.keras.Sequential([
                 tf.keras.layers.LSTM(
                     self.lstm_size,
                     return_sequences=(i != self.num_layers - 1),
-                    dropout=self.dropout,
                 ) for i in range(self.num_layers)
             ])
 
         # Linear layers
         self.page_linear = tf.keras.layers.Dense(self.page_vocab_size, input_shape=(self.lstm_size,), activation=None)
         self.offset_linear = tf.keras.layers.Dense(self.offset_size, input_shape=(self.lstm_size,), activation=None)
+
+    def train_step(self, data):
+        ret = super(HierarchicalLSTM, self).train_step(data)
+
+        # Need to keep track of step + epoch for dropout random seed
+        self.step += 1
+        if self.step >= self.steps_per_epoch:
+            self.step = 0
+            self.epoch += 1
+
+        # Still need to return original logs
+        return ret
 
     def call(self, inputs, training=False):
         # Compute embeddings
@@ -83,6 +111,8 @@ class HierarchicalLSTM(tf.keras.Model):
 
         # Run through LSTM
         lstm_inputs = tf.concat([pc_embed, page_embed, offset_embed], 2)
+        # Manual embedding dropout to have reproducible dropout randomness
+        lstm_inputs = Stateless.dropout_input(lstm_inputs, self.dropout, seed=(self.epoch, self.step), training=training)
         coarse_out = self.coarse_layers(lstm_inputs, training=training)
         fine_out = self.fine_layers(lstm_inputs, training=training)
 
@@ -115,14 +145,17 @@ class HierarchicalLSTM(tf.keras.Model):
         else:
             loss_fn = HierarchicalCrossEntropyWithLogitsLoss()
 
+        metrics = [
+            PageHierarchicalAccuracy(sequence_loss=config.sequence_loss),
+            OffsetHierarchicalAccuracy(sequence_loss=config.sequence_loss),
+            OverallHierarchicalAccuracy(sequence_loss=config.sequence_loss),
+        ]
+
         model.compile(
             optimizer='adam',
             loss=loss_fn,
-            metrics=[
-                PageHierarchicalAccuracy(sequence_loss=config.sequence_loss),
-                OffsetHierarchicalAccuracy(sequence_loss=config.sequence_loss),
-                OverallHierarchicalAccuracy(sequence_loss=config.sequence_loss),
-            ],
+            metrics=metrics,
         )
 
-        return model
+        # Return metrics for resume checkpointing
+        return model, metrics

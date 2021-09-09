@@ -11,7 +11,6 @@ class BenchmarkTrace:
         self.pc_mapping = {'oov': 0}
         self.page_mapping = {'oov': 0}
         self.data = []
-        self.pc_locs = {}
 
     def read_file(self, f):
         '''
@@ -35,8 +34,6 @@ class BenchmarkTrace:
 
         if pc not in self.pc_mapping:
             self.pc_mapping[pc] = len(self.pc_mapping)
-            self.pc_locs[self.pc_mapping[pc]] = []
-        self.pc_locs[self.pc_mapping[pc]].append(idx)
 
         if page not in self.page_mapping:
             self.page_mapping[page] = len(self.page_mapping)
@@ -65,7 +62,7 @@ class BenchmarkTrace:
 
         return train_split, valid_split
 
-    def split(self, config):
+    def split(self, config, start_epoch, start_step):
         '''
         Splits the trace data into train / valid / test datasets
         '''
@@ -102,11 +99,19 @@ class BenchmarkTrace:
                 return tf.concat([pc_hist, page_hist, offset_hist], axis=-1), tf.cast([self.data[end, 1], self.data[end, 2]], "int64")
 
         # Put together the datasets
-        train_ds = (tf.data.Dataset.range(config.sequence_length, train_split)
+
+        epoch_size = config.steps_per_epoch * config.batch_size
+        def random(x):
+            epoch = x // epoch_size
+            step = x % epoch_size
+            return tf.random.stateless_uniform((), minval=config.sequence_length, maxval=train_split, seed=(epoch, step), dtype=tf.dtypes.int64)
+
+        # Needs to go to num_epochs + 1 because epochs is 1 indexed
+        train_ds = (tf.data.Dataset
+            .range(start_epoch * epoch_size + start_step * config.batch_size, (config.num_epochs + 1) * config.steps_per_epoch * config.batch_size)
+            .map(random)
             .map(mapper)
-            .shuffle(config.batch_size * config.steps_per_epoch, seed=0)
-            .repeat(config.num_epochs * config.steps_per_epoch)
-            .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+            .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
         )
 
         valid_ds = (tf.data.Dataset.range(train_split, valid_split)

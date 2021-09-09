@@ -26,6 +26,13 @@ class HierarchicalSequenceLoss(tf.keras.losses.Loss):
         )
         return page_loss + offset_loss
 
+    def get_config(self):
+        return {}
+
+    @classmethod
+    def from_config(cls, config):
+        return HierarchicalSequenceLoss()
+
 
 class HierarchicalCrossEntropyWithLogitsLoss(tf.keras.losses.Loss):
     '''
@@ -40,3 +47,10 @@ class HierarchicalCrossEntropyWithLogitsLoss(tf.keras.losses.Loss):
         page_loss = self.cross_entropy(y_true[:, 0], y_pred[:, :-64])
         offset_loss = self.cross_entropy(y_true[:, 1], y_pred[:, -64:])
         return page_loss + offset_loss
+
+    def get_config(self):
+        return {}
+
+    @classmethod
+    def from_config(cls, config):
+        return HierarchicalCrossEntropyWithLogitsLoss()

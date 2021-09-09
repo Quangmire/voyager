@@ -17,6 +17,9 @@ def get_parser():
     parser.add_argument('--debug', action='store_true', default=False, help='Faster epochs for debugging')
     parser.add_argument('--config', default='./configs/base.yaml', help='Path to configuration file for the model')
     parser.add_argument('--print-every', type=int, default=None, help='Print updates every this number of steps. Make sure to set when outputting to a file')
+    parser.add_argument('--start-epoch', type=int, default=1, help='Resume at specified epoch')
+    parser.add_argument('--start-step', type=int, default=0, help='Resume at specified step')
+    parser.add_argument('--checkpoint-every', type=int, default=1000, help='Save a resume checkpoint every this number of steps')
     parser.add_argument('--tb-dir', help='Directory to save TensorBoard logs')
 
     return parser

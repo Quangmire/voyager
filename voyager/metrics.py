@@ -1,5 +1,10 @@
 import tensorflow as tf
 
+# Deterministic reduce_sum from https://www.twosigma.com/articles/a-workaround-for-non-determinism-in-tensorflow/
+def reduce_sum_det(x):
+    v = tf.reshape(x, [1, -1])
+    return tf.reshape(tf.matmul(v, tf.ones_like(v), transpose_b=True), [])
+
 class OverallHierarchicalAccuracy(tf.keras.metrics.Metric):
     '''
     Accuracy of the full predicted address
@@ -31,7 +36,7 @@ class OverallHierarchicalAccuracy(tf.keras.metrics.Metric):
             values = tf.multiply(values, sample_weight)
 
         # Update internal stats
-        self.correct.assign_add(tf.reduce_sum(values))
+        self.correct.assign_add(reduce_sum_det(values))
         self.total.assign_add(tf.cast(tf.shape(y_true)[0], self.dtype))
 
     def result(self):
@@ -40,6 +45,31 @@ class OverallHierarchicalAccuracy(tf.keras.metrics.Metric):
     def reset_state(self):
         self.correct.assign(0.0)
         self.total.assign(0.0)
+
+    def get_config(self):
+        '''
+        Return information needed to save state
+        '''
+        return {'total': self.total.value().numpy(), 'correct': self.correct.value().numpy(), 'sequence_loss': self.sequence_loss}
+
+    def load_config(self, config):
+        '''
+        Restore state
+        '''
+        self.correct.assign(config['correct'])
+        self.total.assign(config['total'])
+        self.sequence_loss = config['sequence_loss']
+
+    @classmethod
+    def from_config(cls, config):
+        '''
+        Restore state
+        '''
+        self = cls()
+        self.correct.assign(config['correct'])
+        self.total.assign(config['total'])
+        self.sequence_loss = config['sequence_loss']
+        return self
 
 class PageHierarchicalAccuracy(tf.keras.metrics.Metric):
     '''
@@ -69,7 +99,7 @@ class PageHierarchicalAccuracy(tf.keras.metrics.Metric):
             values = tf.multiply(values, sample_weight)
 
         # Update internal stats
-        self.correct.assign_add(tf.reduce_sum(values))
+        self.correct.assign_add(reduce_sum_det(values))
         self.total.assign_add(tf.cast(tf.shape(y_true)[0], self.dtype))
 
     def result(self):
@@ -78,6 +108,31 @@ class PageHierarchicalAccuracy(tf.keras.metrics.Metric):
     def reset_state(self):
         self.correct.assign(0.0)
         self.total.assign(0.0)
+
+    def get_config(self):
+        '''
+        Return information needed to save state
+        '''
+        return {'total': self.total.value().numpy(), 'correct': self.correct.value().numpy(), 'sequence_loss': self.sequence_loss}
+
+    def load_config(self, config):
+        '''
+        Restore state
+        '''
+        self.correct.assign(config['correct'])
+        self.total.assign(config['total'])
+        self.sequence_loss = config['sequence_loss']
+
+    @classmethod
+    def from_config(cls, config):
+        '''
+        Restore state
+        '''
+        self = cls()
+        self.correct.assign(config['correct'])
+        self.total.assign(config['total'])
+        self.sequence_loss = config['sequence_loss']
+        return self
 
 class OffsetHierarchicalAccuracy(tf.keras.metrics.Metric):
     '''
@@ -107,7 +162,7 @@ class OffsetHierarchicalAccuracy(tf.keras.metrics.Metric):
             values = tf.multiply(values, sample_weight)
 
         # Update internal stats
-        self.correct.assign_add(tf.reduce_sum(values))
+        self.correct.assign_add(reduce_sum_det(values))
         self.total.assign_add(tf.cast(tf.shape(y_true)[0], self.dtype))
 
     def result(self):
@@ -117,3 +172,28 @@ class OffsetHierarchicalAccuracy(tf.keras.metrics.Metric):
         self.correct.assign(0.0)
         self.total.assign(0.0)
 
+    def get_config(self):
+        '''
+        Return information needed to save state
+        '''
+        return {'total': self.total.value().numpy(), 'correct': self.correct.value().numpy(), 'sequence_loss': self.sequence_loss}
+
+    def load_config(self, config):
+        '''
+        Restore state
+        '''
+        self.correct.assign(config['correct'])
+        self.total.assign(config['total'])
+        self.sequence_loss = config['sequence_loss']
+
+
+    @classmethod
+    def from_config(cls, config):
+        '''
+        Restore state
+        '''
+        self = cls()
+        self.correct.assign(config['correct'])
+        self.total.assign(config['total'])
+        self.sequence_loss = config['sequence_loss']
+        return self
