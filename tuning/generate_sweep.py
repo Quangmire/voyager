@@ -31,8 +31,10 @@ TRACES = [
 ]
 
 VARIATIONS = {
-    'learning_rate': [0.01, 0.001, 0.0001, 0.00001],
-    #'batch_size': [32, 64, 128, 256, 512],
+    #'learning_rate': [0.01, 0.001, 0.0001, 0.00001], # best mcf-s0: 0.001 (run 1)
+    #'batch_size': [32, 64, 128, 256, 512],           # best mcf-s0: 512   (run 1)
+    'pc_embed_size': [16, 32, 64, 128],
+    'page_embed_size': [32, 64, 128, 256, 512]
 }
 
 # Template for bash script

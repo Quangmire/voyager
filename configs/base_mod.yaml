@@ -1,6 +1,6 @@
 name: "Base Voyager"
 # Training Parameters
-batch_size: 64
+batch_size: 512
 learning_rate: 0.001
 learning_rate_decay: 2
 min_learning_rate: 0.0001
