@@ -21,7 +21,7 @@ from condor_common import generate # Used for template for condor submit scripts
 
 VOYAGER_PATH = '/u/cmolder/GitHub/voyager/'
 BASE_CONFIG_PATH = '/u/cmolder/GitHub/voyager/configs/base_mod.yaml'
-BASE_DIR = '/scratch/cluster/cmolder/voyager_hypertuning/'
+BASE_DIR = '/scratch/cluster/cmolder/voyager_hypertuning/embeddingsizes/'
 USE_GPU = True
 PRINT_EVERY = 100
 
@@ -33,8 +33,8 @@ TRACES = [
 VARIATIONS = {
     #'learning_rate': [0.01, 0.001, 0.0001, 0.00001], # best mcf-s0: 0.001 (run 1)
     #'batch_size': [32, 64, 128, 256, 512],           # best mcf-s0: 512   (run 1)
-    'pc_embed_size': [16, 32, 64, 128],
-    'page_embed_size': [32, 64, 128, 256, 512]
+    'pc_embed_size': [16, 32, 64, 128, 256],          # (pc=128, page=512, bsz=512) runs out of memory on GTX 1080
+    'page_embed_size': [32, 64, 128, 256]
 }
 
 # Template for bash script
@@ -82,7 +82,7 @@ def main():
             tr_name, pm_name = tr.split('.')[1], permutation_string(pm)
 
             # Setup initial output directories/files per experiment
-            tensorboard_dir = os.path.join(BASE_DIR, 'tensorboard', tr_name, pm_name+'/')
+            tensorboard_dir = os.path.join(BASE_DIR, 'tensorboard', tr_name, pm_name + '/')
             log_file_base = os.path.join(BASE_DIR, 'logs', tr_name, pm_name)
             config_file = os.path.join(BASE_DIR, 'configs', f'{pm_name}.yaml')
             condor_file = os.path.join(BASE_DIR, 'condor', tr_name, f'{pm_name}.condor')
