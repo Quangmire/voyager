@@ -44,10 +44,10 @@ def _setup_callbacks(config, print_every=None, model_path=None):
     return callbacks
 
 
-def train_voyager(config, print_every=None, model_path=None):
+def train_voyager(config, benchmark, print_every=None, model_path=None):
     """Train/validate an instance of Voyager."""
     # Load and process benchmark
-    benchmark = read_benchmark_trace(args.benchmark)
+    benchmark = read_benchmark_trace(benchmark)
     train_ds, valid_ds, _ = benchmark.split(config)
 
     # Create and compile the model
@@ -69,6 +69,7 @@ def main():
     args = parser.parse_args()
     config = load_config(args.config)
     print('Base config:', config)
+    print('Benchmark:', args.benchmark)
 
     # Define hyperparameter search space by building on
     # the base config.

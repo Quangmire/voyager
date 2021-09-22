@@ -72,18 +72,19 @@ def main():
         print('Notice: Not logging to Tensorboard. To do so, please provide a directory to --tb-dir.')
 
     # Set-up learning rate callbacks (plus anything else).
-    callbacks.extend([
-        tf.keras.callbacks.ReduceLROnPlateau(
-            monitor='val_acc',
-            factor=1 / config.learning_rate_decay,
-            patience=5,
-            mode='max',
-            verbose=1,
-            min_lr=config.min_learning_rate,
-            min_delta=0.005,
-        ),
-        
-    ])
+    if config.learning_rate_decay > 1:
+        callbacks.append(
+            tf.keras.callbacks.ReduceLROnPlateau(
+                monitor='val_acc',
+                factor=1 / config.learning_rate_decay,
+                patience=5,
+                mode='max',
+                verbose=1,
+                min_lr=config.min_learning_rate,
+                min_delta=0.005,
+        ))
+    else:
+        print('Notice: Not decaying learning rate. To do so, please provide learning_rate_decay > 1.0 in the config file.')
 
     model.fit(
         train_ds,
