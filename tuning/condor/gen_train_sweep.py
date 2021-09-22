@@ -1,18 +1,16 @@
-"""After completing a hyperparameter tuning sweep,
-(gen_trace_sweep.py), this code takes the series 
-of saved models, and creates a series of Condor 
-scripts to generate a ChampSim prefetch trace for 
-each model.
+"""Generate a hyperparameter sweep for Voyager.
+Using the parameters from a base configuration, vary them
+as desired, saving the new configurations to {BASE_DIR}/configs.
 
-A file that lists each launch condor config line-by-line
-is saved to {BASE_DIR}/condor_configs_tracegen.txt. You
+Then, generate condor launch scripts for each configuration +
+benchmark.
+
+A file that lists each launch condor config line-by-line is
+saved to {BASE_DIR}/condor_configs.txt. You can run a script
 like Quangmire/condor/condor_submit_batch.py to launch them.
 
 Based on: github.com/Quangmire/condor/condor_pc.py
-
-TODO Work in progress (awaiting script)
 """
-
 
 import os
 import itertools
@@ -25,7 +23,8 @@ VOYAGER_PATH = '/u/cmolder/GitHub/voyager/'
 BASE_CONFIG_PATH = '/u/cmolder/GitHub/voyager/configs/base_mod.yaml'
 BASE_DIR = '/scratch/cluster/cmolder/voyager_hypertuning/experts_lrdecay/'
 USE_GPU = True
-PRINT_EVERY = 100
+PRINT_EVERY = 100 # Number of steps between printing to log
+CHECKPOINT_EVERY = 50 # Number of steps between checkpoints
 
 TRACE_DIR = '/scratch/cluster/qduong/ML-DPC/data/load_traces/'
 TRACES = [
@@ -35,23 +34,21 @@ TRACES = [
 VARIATIONS = {
     #'learning_rate': [0.01, 0.001, 0.0001, 0.00001], # best mcf-s0: 0.001 (run 1)
     #'batch_size': [32, 64, 128, 256, 512],           # best mcf-s0: 512   (run 1)
-    #'pc_embed_size': [16, 32, 64, 128, 256],          # (pc=128, page=512, bsz=512) runs out of memory on GTX 1080
+    #'pc_embed_size': [16, 32, 64, 128, 256],         # (pc=128, page=512, bsz=512) runs out of memory on GTX 1080
     #'page_embed_size': [32, 64, 128, 256]
     'page_embed_size': [64, 256],
     'num_experts': [10, 25, 50, 75, 100],
     'learning_rate_decay': [1, 2] # 1 disables LR decay
 }
 
-
 # Template for bash script
-# TODO Implement correctly
 SH_TEMPLATE = '''#!/bin/bash
 source /u/cmolder/miniconda3/etc/profile.d/conda.sh
 conda activate tensorflow
 python3 -u {script_file} --benchmark {benchmark} \\
-    --config {config_file}  \\
-    --trace-path {prefetch_trace_file} \\
-    --model-path {model_path} --print-every {print_every}
+    --config {config_file} --tb-dir {tensorboard_dir} \\
+    --model-path {model_path} --print-every {print_every} \\
+    --checkpoint-every {checkpoint_period}
 '''
 
 
@@ -90,21 +87,36 @@ def main():
             tr_name, pm_name = tr.split('.')[1], permutation_string(pm)
 
             # Setup initial output directories/files per experiment
-            log_file_base = os.path.join(BASE_DIR, 'logs', tr_name, pm_name)
-            condor_file = os.path.join(BASE_DIR, 'condor', tr_name, f'{pm_name}.condor')
-            script_file = os.path.join(BASE_DIR, 'scripts', tr_name, f'{pm_name}.sh')
+            tensorboard_dir = os.path.join(BASE_DIR, 'tensorboard', tr_name, 'train', pm_name + '/')
+            log_file_base = os.path.join(BASE_DIR, 'logs', tr_name, 'train', pm_name)
+            config_file = os.path.join(BASE_DIR, 'configs', f'{pm_name}.yaml')
+            condor_file = os.path.join(BASE_DIR, 'condor', tr_name, 'train', f'{pm_name}.condor')
+            script_file = os.path.join(BASE_DIR, 'scripts', tr_name, 'train', f'{pm_name}.sh')
+            model_file = os.path.join(BASE_DIR, 'models', tr_name, f'{pm_name}.model')
             
             print(f'\nFiles for {tr_name}, {pm_name}:')
             print(f'    output log  : {log_file_base}.OUT')
             print(f'    error log   : {log_file_base}.ERR')
-            print(f'    model       : {log_file_base}.model')
+            print(f'    model       : {model_file}')
+            print(f'    tensorboard : {tensorboard_dir}')
+            print(f'    config      : {config_file}')
             print(f'    condor      : {condor_file}')
             print(f'    script      : {script_file}')
 
             # Create directories
-            os.makedirs(os.path.join(BASE_DIR, 'tracegen', 'logs', tr_name), exist_ok=True)
-            os.makedirs(os.path.join(BASE_DIR, 'tracegen', 'condor', tr_name), exist_ok=True)
-            os.makedirs(os.path.join(BASE_DIR, 'tracegen', 'scripts', tr_name), exist_ok=True)
+            os.makedirs(tensorboard_dir, exist_ok=True)
+            os.makedirs(os.path.join(BASE_DIR, 'logs', tr_name, 'train'), exist_ok=True)
+            os.makedirs(os.path.join(BASE_DIR, 'configs'), exist_ok=True)
+            os.makedirs(os.path.join(BASE_DIR, 'condor', tr_name, 'train'), exist_ok=True)
+            os.makedirs(os.path.join(BASE_DIR, 'scripts', tr_name, 'train'), exist_ok=True)
+            os.makedirs(os.path.join(BASE_DIR, 'models', tr_name), exist_ok=True)
+
+            # Build config file
+            config = copy.deepcopy(base_config)
+            for k, v in pm.items():
+                config[k] = v
+            with open(config_file, 'w') as f:
+                yaml.dump(config, f)
 
             # Build condor file
             condor = generate(
@@ -117,29 +129,23 @@ def main():
             with open(condor_file, 'w') as f:
                 print(condor, file=f)
 
-            # TODO implement and calculate trace file path.
-            prefetch_trace_file = None
-
             # Build script file
             with open(script_file, 'w') as f:
                 print(SH_TEMPLATE.format(
-                    script_file=os.path.join(VOYAGER_PATH, 'generate_trace.py'), # TODO verify this is correct.
+                    script_file=os.path.join(VOYAGER_PATH, 'train.py'),
                     benchmark=os.path.join(TRACE_DIR, tr),
-                    model_path=log_file_base + '.model',
-                    prefetch_trace_file=prefetch_trace_file,
+                    config_file=config_file,
+                    tensorboard_dir=tensorboard_dir,
+                    model_path=model_file,
                     print_every=PRINT_EVERY,
+                    checkpoint_period=CHECKPOINT_EVERY,
                 ), file=f)
-            
-            # Make script executable
-            os.chmod(script_file, 0o777)
+            os.chmod(script_file, 0o777) # Make script executable
 
-            # Add condor file to the list
-            condor_files.append(condor_file)
+            condor_files.append(condor_file) # Add condor file to the list
 
-    print(f'\nCondor file list : {os.path.join(BASE_DIR, "condor_configs.txt")}')
-    with open(
-        os.path.join(BASE_DIR, 'condor_configs.txt'), 'w'
-    ) as f:
+    print(f'\nCondor file list : {os.path.join(BASE_DIR, "condor_configs_train.txt")}')
+    with open(os.path.join(BASE_DIR, 'condor_configs_train.txt'), 'w') as f:
         for cf in condor_files:
             print(cf, file=f)
 
