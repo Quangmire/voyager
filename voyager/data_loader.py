@@ -11,6 +11,7 @@ class BenchmarkTrace:
         self.pc_mapping = {'oov': 0}
         self.page_mapping = {'oov': 0}
         self.data = []
+        self.inst_ids = []
 
     def read_file(self, f):
         '''
@@ -20,11 +21,11 @@ class BenchmarkTrace:
             # Necessary for some extraneous lines in MLPrefetchingCompetition traces
             if line.startswith('***') or line.startswith('Read'):
                 continue
-            pc, addr = self.process_line(line)
-            self.process_row(i, pc, addr)
+            inst_id, pc, addr = self.process_line(line)
+            self.process_row(i, inst_id, pc, addr)
         self.data = tf.convert_to_tensor(self.data)
 
-    def process_row(self, idx, pc, addr):
+    def process_row(self, idx, inst_id, pc, addr):
         '''
         Process PC / Address
 
@@ -39,6 +40,7 @@ class BenchmarkTrace:
             self.page_mapping[page] = len(self.page_mapping)
 
         self.data.append([self.pc_mapping[pc], self.page_mapping[page], offset])
+        self.inst_ids.append(inst_id)
 
     def process_line(self, line):
         # File format for ML Prefetching Competition
@@ -47,7 +49,7 @@ class BenchmarkTrace:
 
         # Return PC and Load Address
         split = line.strip().split(', ')
-        return (int(split[3], 16), int(split[2], 16))
+        return (int(split[0]), int(split[3], 16), int(split[2], 16))
 
     def num_pcs(self):
         return len(self.pc_mapping)
@@ -99,7 +101,6 @@ class BenchmarkTrace:
                 return tf.concat([pc_hist, page_hist, offset_hist], axis=-1), tf.cast([self.data[end, 1], self.data[end, 2]], "int64")
 
         # Put together the datasets
-
         epoch_size = config.steps_per_epoch * config.batch_size
         def random(x):
             epoch = x // epoch_size
@@ -123,6 +124,9 @@ class BenchmarkTrace:
             .map(mapper)
             .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
         )
+
+        self.test_inst_ids = self.inst_ids[valid_split:]
+        self.reverse_page_mapping = {v: k for k, v in self.page_mapping.items()}
 
         return train_ds, valid_ds, test_ds
 
