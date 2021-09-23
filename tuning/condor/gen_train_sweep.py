@@ -21,10 +21,10 @@ from condor_common import generate # Used for template for condor submit scripts
 
 VOYAGER_PATH = '/u/cmolder/GitHub/voyager/'
 BASE_CONFIG_PATH = '/u/cmolder/GitHub/voyager/configs/base_mod.yaml'
-BASE_DIR = '/scratch/cluster/cmolder/voyager_hypertuning/experts_lrdecay/'
+BASE_DIR = '/scratch/cluster/cmolder/voyager_hypertuning/learningrate_batchsize/'
 USE_GPU = True
 PRINT_EVERY = 100 # Number of steps between printing to log
-CHECKPOINT_EVERY = 50 # Number of steps between checkpoints
+CHECKPOINT_EVERY = 5000 # Number of steps between checkpoints
 
 TRACE_DIR = '/scratch/cluster/qduong/ML-DPC/data/load_traces/'
 TRACES = [
@@ -32,13 +32,13 @@ TRACES = [
 ]
 
 VARIATIONS = {
-    #'learning_rate': [0.01, 0.001, 0.0001, 0.00001], # best mcf-s0: 0.001 (run 1)
-    #'batch_size': [32, 64, 128, 256, 512],           # best mcf-s0: 512   (run 1)
+    'learning_rate': [0.01, 0.001, 0.0001, 0.00001], # best mcf-s0: 0.001 (run 1)
+    'batch_size': [32, 64, 128, 256, 512],           # best mcf-s0: 512   (run 1)
     #'pc_embed_size': [16, 32, 64, 128, 256],         # (pc=128, page=512, bsz=512) runs out of memory on GTX 1080
     #'page_embed_size': [32, 64, 128, 256]
-    'page_embed_size': [64, 256],
-    'num_experts': [10, 25, 50, 75, 100],
-    'learning_rate_decay': [1, 2] # 1 disables LR decay
+    #'page_embed_size': [64, 256],
+    #'num_experts': [10, 25, 50, 75, 100],
+    #'learning_rate_decay': [1, 2] # 1 disables LR decay
 }
 
 # Template for bash script

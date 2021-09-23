@@ -24,6 +24,41 @@ if 'CUDA_VISIBLE_DEVICES' not in os.environ:
     os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
 
 
+def setup_callbacks(args, config, model, metrics):
+    """Setup callbacks for prefetch trace generation.
+    (NOTE: Not currently used for generation.)
+    """
+    callbacks = []
+
+    if args.print_every is not None: # Set-up batch logger callback.
+        callbacks.append(NBatchLogger(
+            args.print_every, 
+            start_epoch=args.start_epoch, 
+            start_step=args.start_step
+        ))
+
+    if args.model_path: # Set-up model checkpoint callback.
+        callbacks.append(tf.keras.callbacks.ModelCheckpoint(
+            filepath=args.model_path,
+            save_weights_only=True,
+            monitor='val_acc',
+            mode='max',
+            save_best_only=True,
+            verbose=1,
+        ))
+    else:
+        print('Notice: Not checkpointing the model. To do so, please provide a path to --model-path.')
+
+    if args.tb_dir: # Set-up Tensorboard callback.
+        callbacks.append(
+            tf.keras.callbacks.TensorBoard(
+                log_dir=args.tb_dir,
+                histogram_freq=1
+        ))
+    else:
+        print('Notice: Not logging to Tensorboard. To do so, please provide a directory to --tb-dir.')
+
+
 def main():
     parser = get_parser()
     parser.add_argument('--prefetch-file', required=True)
@@ -41,35 +76,7 @@ def main():
     model, metrics = HierarchicalLSTM.compile_model(config, benchmark.num_pcs(), benchmark.num_pages())
 
     # Set-up callbacks for training
-    callbacks = []
-
-    # Set-up batch logger callback.
-    if args.print_every is not None:
-        callbacks.append(NBatchLogger(args.print_every, start_epoch=args.start_epoch, start_step=args.start_step))
-
-    # Set-up model checkpoint callback.
-    if args.model_path:
-        callbacks.append(
-            tf.keras.callbacks.ModelCheckpoint(
-                filepath=args.model_path,
-                save_weights_only=True,
-                monitor='val_acc',
-                mode='max',
-                save_best_only=True,
-                verbose=1,
-        ))
-    else:
-        print('Notice: Not checkpointing the model. To do so, please provide a path to --model-path.')
-
-    # Set-up Tensorboard callback.
-    if args.tb_dir:
-        callbacks.append(
-            tf.keras.callbacks.TensorBoard(
-                log_dir=args.tb_dir,
-                histogram_freq=1
-        ))
-    else:
-        print('Notice: Not logging to Tensorboard. To do so, please provide a directory to --tb-dir.')
+    # callbacks = setup_callbacks(args, config, model, metrics)
 
     model.load(args.model_path)
     with open(args.prefetch_file, 'w') as f:

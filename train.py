@@ -24,6 +24,68 @@ if 'CUDA_VISIBLE_DEVICES' not in os.environ:
     os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu)
 
 
+def setup_callbacks(args, config, model, metrics):
+    """Set up callbacks for training.
+    """
+    callbacks = []
+
+    if args.print_every is not None: # Set-up batch logger callback.
+        callbacks.append(NBatchLogger(
+            args.print_every, 
+            start_epoch=args.start_epoch, 
+            start_step=args.start_step
+        ))
+
+    if args.model_path: # Set-up model checkpoint callback.
+        callbacks.append(tf.keras.callbacks.ModelCheckpoint(
+            filepath=args.model_path,
+            save_weights_only=True,
+            monitor='val_acc',
+            mode='max',
+            save_best_only=True,
+            verbose=1,
+        ))
+    else:
+        print('Notice: Not checkpointing the model. To do so, please provide a path to --model-path.')
+
+    if args.tb_dir: # Set-up Tensorboard callback.
+        callbacks.append(tf.keras.callbacks.TensorBoard(
+            log_dir=args.tb_dir,
+            histogram_freq=1
+        ))
+    else:
+        print('Notice: Not logging to Tensorboard. To do so, please provide a directory to --tb-dir.')
+
+    # Set-up learning rate decay callback.
+    if config.learning_rate_decay > 1:
+        lr_decay_callback = ReduceLROnPlateauWithConfig(
+            monitor='val_acc',
+            factor=1 / config.learning_rate_decay,
+            patience=5,
+            mode='max',
+            verbose=1,
+            min_lr=config.min_learning_rate,
+            min_delta=0.005,
+        )
+        callbacks.append(lr_decay_callback)
+    else:
+        print('Notice: Not decaying learning rate. To do so, please provide learning_rate_decay > 1.0 in the config file.')
+
+    # Create and add in ResumeCheckpoint
+    # Dictionary of things to backup
+    backup = {metric.name : metric for metric in metrics}
+    backup['optim'] = model.optimizer
+    if config.learning_rate_decay > 1:
+        backup['lr_decay'] = lr_decay_callback
+
+    callbacks.append(ResumeCheckpoint(
+        args.model_path, backup, args.checkpoint_every, 
+        epoch=args.start_epoch, step=args.start_step, 
+        resume=(args.start_step != 0 or args.start_epoch != 1)
+    ))
+    return callbacks
+
+
 def main():
     parser = get_parser()
     args = parser.parse_args()
@@ -40,65 +102,7 @@ def main():
     model, metrics = HierarchicalLSTM.compile_model(config, benchmark.num_pcs(), benchmark.num_pages())
 
     # Set-up callbacks for training
-    callbacks = []
-
-    # Set-up batch logger callback.
-    if args.print_every is not None:
-        callbacks.append(NBatchLogger(args.print_every, start_epoch=args.start_epoch, start_step=args.start_step))
-
-    # Set-up model checkpoint callback.
-    if args.model_path:
-        callbacks.append(
-            tf.keras.callbacks.ModelCheckpoint(
-                filepath=args.model_path,
-                save_weights_only=True,
-                monitor='val_acc',
-                mode='max',
-                save_best_only=True,
-                verbose=1,
-        ))
-    else:
-        print('Notice: Not checkpointing the model. To do so, please provide a path to --model-path.')
-
-    # Set-up Tensorboard callback.
-    if args.tb_dir:
-        callbacks.append(
-            tf.keras.callbacks.TensorBoard(
-                log_dir=args.tb_dir,
-                histogram_freq=1
-        ))
-    else:
-        print('Notice: Not logging to Tensorboard. To do so, please provide a directory to --tb-dir.')
-
-    # Set-up ResumeCheckpoint callback.
-    # Dictionary of things to backup
-    backup = {
-        'optim': model.optimizer,
-    }
-
-    for metric in metrics:
-        backup[metric.name] = metric
-
-    # Set-up learning rate decay callback.
-    if config.learning_rate_decay > 1:
-        lr_decay_callback = ReduceLROnPlateauWithConfig(
-            monitor='val_acc',
-            factor=1 / config.learning_rate_decay,
-            patience=5,
-            mode='max',
-            verbose=1,
-            min_lr=config.min_learning_rate,
-            min_delta=0.005,
-        )
-        callbacks.append(lr_decay_callback)
-        backup['lr_decay'] = lr_decay_callback
-    else:
-        print('Notice: Not decaying learning rate. To do so, please provide learning_rate_decay > 1.0 in the config file.')
-
-    # Create and add in ResumeCheckpoint
-    callbacks.append(
-        ResumeCheckpoint(args.model_path, backup, args.checkpoint_every, epoch=args.start_epoch, step=args.start_step, resume=(args.start_step != 0 or args.start_epoch != 1))
-    )
+    callbacks = setup_callbacks(args, config, model, metrics)
 
     # If resuming partway through an epoch, finish it before starting the rest
     # Note that here and main training loop below, initial_epoch is zero-indexed hence the "- 1"
