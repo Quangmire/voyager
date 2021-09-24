@@ -2,10 +2,10 @@ import argparse
 import re
 import shutil
 import subprocess
+import time
 
 import attrdict
 import yaml
-
 
 def get_parser():
     '''
@@ -19,7 +19,7 @@ def get_parser():
     parser.add_argument('--print-every', type=int, default=None, help='Print updates every this number of steps. Make sure to set when outputting to a file')
     parser.add_argument('--start-epoch', type=int, default=1, help='Resume at specified epoch')
     parser.add_argument('--start-step', type=int, default=0, help='Resume at specified step')
-    parser.add_argument('--checkpoint-every', type=int, default=1000, help='Save a resume checkpoint every this number of steps')
+    parser.add_argument('--checkpoint-every', type=int, default=None, help='Save a resume checkpoint every this number of steps')
     parser.add_argument('--tb-dir', help='Directory to save TensorBoard logs')
 
     return parser
@@ -35,9 +35,34 @@ def load_config(config_path, debug=False):
 
     # If the debug flag was raised, reduce the number of steps to have faster epochs
     if debug:
-        config.steps_per_epoch //= 100
+        config.steps_per_epoch //= 4
 
     return config
+
+
+# Used to decorate functions for timing purposes
+def timefunction(text=''):
+    # Need to do a double decorate since we want the text parameter
+    def decorate(f):
+        def g(*args, **kwargs):
+            start = time.time()
+            print(text + '...', end='')
+            ret = f(*args, **kwargs)
+            end = time.time()
+            print('Done in', end - start, 'seconds')
+            return ret
+        return g
+
+    # Returns the decorating function with the text parameter available via closure
+    return decorate
+
+
+# Create the prefetch file from the given instruction IDs and addresses
+# See more at github.com/Quangmire/ChampSim
+def create_prefetch_file(prefetch_file, inst_ids, addresses):
+    with open(prefetch_file, 'w') as f:
+        for inst_id, addr in zip(inst_ids, addresses):
+            print(inst_id, hex(addr), file=f)
 
 
 # Modified from https://stackoverflow.com/questions/41634674/tensorflow-on-shared-gpus-how-to-automatically-select-the-one-that-is-unused

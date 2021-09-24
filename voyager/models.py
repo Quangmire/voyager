@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 from voyager.losses import HierarchicalSequenceLoss, HierarchicalCrossEntropyWithLogitsLoss
-from voyager.metrics import OffsetHierarchicalAccuracy, OverallHierarchicalAccuracy, PageHierarchicalAccuracy
+from voyager.metrics import *
 
 
 class Stateless:
@@ -43,15 +43,16 @@ class HierarchicalLSTM(tf.keras.Model):
         self.dropout = config.lstm_dropout
 
         # Embedding Layers
-        self.pc_embedding = tf.keras.layers.Embedding(self.pc_vocab_size, self.pc_embed_size)
-        self.page_embedding = tf.keras.layers.Embedding(self.page_vocab_size, self.page_embed_size)
-        self.offset_embedding = tf.keras.layers.Embedding(self.offset_size, self.offset_embed_size)
+        self.pc_embedding = tf.keras.layers.Embedding(self.pc_vocab_size, self.pc_embed_size, embeddings_regularizer='l1')
+        self.page_embedding = tf.keras.layers.Embedding(self.page_vocab_size, self.page_embed_size, embeddings_regularizer='l1')
+        self.offset_embedding = tf.keras.layers.Embedding(self.offset_size, self.offset_embed_size, embeddings_regularizer='l1')
 
         # Page-Aware Offset Embedding
         self.mha = tf.keras.layers.MultiHeadAttention(
             num_heads=1,
             key_dim=self.page_embed_size,
             attention_axes=(2, 3),
+            kernel_regularizer='l1',
         )
 
         # LSTM Layers
@@ -60,12 +61,14 @@ class HierarchicalLSTM(tf.keras.Model):
                 tf.keras.layers.LSTM(
                     self.lstm_size,
                     return_sequences=True,
+                    kernel_regularizer='l1',
                 ) for i in range(self.num_layers)
             ])
             self.fine_layers = tf.keras.Sequential([
                 tf.keras.layers.LSTM(
                     self.lstm_size,
                     return_sequences=True,
+                    kernel_regularizer='l1',
                 ) for i in range(self.num_layers)
             ])
         else:
@@ -73,18 +76,20 @@ class HierarchicalLSTM(tf.keras.Model):
                 tf.keras.layers.LSTM(
                     self.lstm_size,
                     return_sequences=(i != self.num_layers - 1),
+                    kernel_regularizer='l1',
                 ) for i in range(self.num_layers)
             ])
             self.fine_layers = tf.keras.Sequential([
                 tf.keras.layers.LSTM(
                     self.lstm_size,
                     return_sequences=(i != self.num_layers - 1),
+                    kernel_regularizer='l1',
                 ) for i in range(self.num_layers)
             ])
 
         # Linear layers
-        self.page_linear = tf.keras.layers.Dense(self.page_vocab_size, input_shape=(self.lstm_size,), activation=None)
-        self.offset_linear = tf.keras.layers.Dense(self.offset_size, input_shape=(self.lstm_size,), activation=None)
+        self.page_linear = tf.keras.layers.Dense(self.page_vocab_size, input_shape=(self.lstm_size,), activation=None, kernel_regularizer='l1')
+        self.offset_linear = tf.keras.layers.Dense(self.offset_size, input_shape=(self.lstm_size,), activation=None, kernel_regularizer='l1')
 
     def train_step(self, data):
         ret = super(HierarchicalLSTM, self).train_step(data)
@@ -141,21 +146,29 @@ class HierarchicalLSTM(tf.keras.Model):
         model = HierarchicalLSTM(config, num_unique_pcs, num_unique_pages)
 
         if config.sequence_loss:
-            loss_fn = HierarchicalSequenceLoss()
+            loss = HierarchicalSequenceLoss(multi_label=config.multi_label)
         else:
-            loss_fn = HierarchicalCrossEntropyWithLogitsLoss()
+            loss = HierarchicalCrossEntropyWithLogitsLoss(multi_label=config.multi_label)
 
         metrics = [
-            PageHierarchicalAccuracy(sequence_loss=config.sequence_loss),
-            OffsetHierarchicalAccuracy(sequence_loss=config.sequence_loss),
-            OverallHierarchicalAccuracy(sequence_loss=config.sequence_loss),
+            PageHierarchicalAccuracy(sequence_loss=config.sequence_loss, multi_label=config.multi_label),
+            OffsetHierarchicalAccuracy(sequence_loss=config.sequence_loss, multi_label=config.multi_label),
+            OverallHierarchicalAccuracy(sequence_loss=config.sequence_loss, multi_label=config.multi_label),
         ]
+
+        # Only add prediction accuracy for multi-label since the above 3 metrics
+        # are the same as the prediction accuracy for global stream
+        if config.multi_label:
+            metrics.extend([
+                PagePredictionHierarchicalAccuracy(sequence_loss=config.sequence_loss),
+                OffsetPredictionHierarchicalAccuracy(sequence_loss=config.sequence_loss),
+                OverallPredictionHierarchicalAccuracy(sequence_loss=config.sequence_loss),
+            ])
 
         model.compile(
             optimizer='adam',
-            loss=loss_fn,
+            loss=loss,
             metrics=metrics,
         )
 
-        # Return metrics for resume checkpointing
-        return model, metrics
+        return model

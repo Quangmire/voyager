@@ -8,6 +8,7 @@ num_epochs: 500
 steps_per_epoch: 80000
 train_split: 0.8
 valid_split: 0.1
+multi_label: False
 # Input Parameters
 sequence_loss: False    # Train with sequence loss instead of cross entropy on last timestep
 use_current_pc: False   # Feed in PC of current load instead of previous load at each timestep

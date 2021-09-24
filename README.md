@@ -6,14 +6,18 @@ Voyager Data Prefetcher implemented in TensorFlow 2:
 
 Adapted from [https://github.com/aleczhanshi/neural_hierarchical_sequence](https://github.com/aleczhanshi/neural_hierarchical_sequence)
 
-# Missing Features
-- Fine-Tuned Hyperparameters
+# Implemented Features
+- Voyager model
 - Multi-Labeling Scheme
   - PC Localization
   - Deltas
   - Spatial Localization
 - Generation code for simulating with the modified ChampSim for the ML
   Prefetching Competition at [https://github.com/Quangmire/ChampSim](https://github.com/Quangmire/ChampSim)
+
+# Missing Features
+- Fine-Tuned Hyperparameters
+- Online Training
 
 # Extra Features
 - seq2seq Sequence Loss
