@@ -14,6 +14,7 @@ class BenchmarkTrace:
         self.page_mapping = {'oov': 0}
         self.reverse_page_mapping = {}
         self.data = []
+        self.online_cutoffs = []
         # Boolean value indicating whether or not to use the multiple labeling scheme
         self.multi_label = multi_label
         # Stores pc localized streams
@@ -30,6 +31,7 @@ class BenchmarkTrace:
         self.reverse_page_mapping = {v: k for k, v in self.page_mapping.items()}
         if self.multi_label:
             self._generate_multi_label()
+            # Needs to be regenerated to include deltas
             self.reverse_page_mapping = {v: k for k, v in self.page_mapping.items()}
         self._tensor()
 
@@ -45,11 +47,18 @@ class BenchmarkTrace:
         '''
         Reads and processes the data in the benchmark trace files
         '''
+        cur_online_epoch = 1
+        online_epoch_size = 50 * 1000 * 1000
         for i, line in enumerate(f):
             # Necessary for some extraneous lines in MLPrefetchingCompetition traces
             if line.startswith('***') or line.startswith('Read'):
                 continue
             inst_id, pc, addr = self.process_line(line)
+            # We want 1 epoch per 50M instructions
+            # TODO: Do we want to do every 50M instructions or 50M load instructions?
+            if inst_id >= cur_online_epoch * online_epoch_size:
+                self.online_cutoffs.append(i)
+                cur_online_epoch += 1
             self.process_row(i, inst_id, pc, addr)
 
     @timefunction('Generating multi-label data')
@@ -238,15 +247,14 @@ class BenchmarkTrace:
         # Computing end of train and validation splits
         train_split = int(config.train_split * (len(self.data) - config.sequence_length)) + config.sequence_length
         valid_split = int((config.train_split + config.valid_split) * (len(self.data) - config.sequence_length)) + config.sequence_length
+        print('TEST INST ID STARTS AROUND ~', self.data[valid_split, 0])
 
         return train_split, valid_split
 
-    def split(self, config, start_epoch, start_step):
+    def split(self, config, start_epoch=0, start_step=0, online=False):
         '''
         Splits the trace data into train / valid / test datasets
         '''
-        train_split, valid_split = self._split_idx(config)
-
         def mapper(idx):
             '''
             Maps index in dataset to x = [pc_hist, page_hist, offset_hist], y = [page_target, offset_target]
@@ -262,7 +270,7 @@ class BenchmarkTrace:
             '''
             start, end = idx - config.sequence_length, idx
 
-            inst_ids = self.data[start:end, 0]
+            inst_ids = self.data[end - 1, 0]
 
             page_hist = self.data[start:end, 2]
             offset_hist = self.data[start:end, 3]
@@ -292,17 +300,53 @@ class BenchmarkTrace:
 
             return inst_ids, tf.concat([pc_hist, page_hist, offset_hist], axis=-1), y_page, y_offset
 
-        # Put together the datasets
+        # Closure for generating a reproducible random sequence
         epoch_size = config.steps_per_epoch * config.batch_size
-        def random(x):
-            epoch = x // epoch_size
-            step = x % epoch_size
-            return tf.random.stateless_uniform((), minval=config.sequence_length, maxval=train_split, seed=(epoch, step), dtype=tf.dtypes.int64)
+        def random_closure(minval, maxval):
+            def random(x):
+                epoch = x // epoch_size
+                step = x % epoch_size
+                return tf.random.stateless_uniform((), minval=minval, maxval=maxval, seed=(epoch, step), dtype=tf.dtypes.int64)
+            return random
 
+        if online:
+            # Sets of train and eval datasets for each epoch
+            train_datasets = []
+            eval_datasets = []
+            # Exclude the first N values since they cannot fully be an input for Voyager
+            cutoffs = [config.sequence_length] + self.online_cutoffs
+
+            # Include the rest of the data if it wasn't on a 50M boundary
+            if self.online_cutoffs[-1] < len(self.data):
+                self.online_cutoffs.append(len(self.data))
+
+            # Stop before the last dataset since we don't need to train on it
+            for i in range(len(cutoffs) - 2):
+                # Train on DATA[idx[i]] to DATA[idx[i + 1]]
+                # Evaluate on DATA[idx[i + 1]] to DATA[idx[i + 2]]
+                train_datasets.append(
+                    tf.data.Dataset.range(0, config.num_epochs_online * epoch_size)
+                        .map(random_closure(cutoffs[i], cutoffs[i + 1]))
+                        .map(mapper)
+                        .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+                )
+
+                eval_datasets.append(
+                    tf.data.Dataset.range(cutoffs[i + 1], cutoffs[i + 2])
+                        .map(mapper)
+                        .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+                )
+
+            return train_datasets, eval_datasets
+
+        # Regular 80-10-10 decomposition
+        train_split, valid_split = self._split_idx(config)
+
+        # Put together the datasets
         # Needs to go to num_epochs + 1 because epochs are 1 indexed
         train_ds = (tf.data.Dataset
             .range(start_epoch * epoch_size + start_step * config.batch_size, (config.num_epochs + 1) * config.steps_per_epoch * config.batch_size)
-            .map(random)
+            .map(random_closure(config.sequence_length, train_split))
             .map(mapper)
             .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
         )
@@ -321,9 +365,8 @@ class BenchmarkTrace:
 
     # Unmaps the page and offset
     def unmap(self, x, page, offset, sequence_length):
-        if page not in self.reverse_page_mapping:
-            print(page, len(self.page_mapping))
         unmapped_page = self.reverse_page_mapping[page]
+
         # DELTA LOCALIZED
         if isinstance(unmapped_page, str):
             prev_page = x[2 * sequence_length - 1]
@@ -332,11 +375,13 @@ class BenchmarkTrace:
             prev_addr = (unmapped_prev_page << 6) + prev_offset
             delta = int(unmapped_page[1:])
             if unmapped_page[0] == '+':
-                return prev_addr + delta
+                ret_addr = prev_addr + delta
             else:
-                return prev_addr - delta
+                ret_addr = prev_addr - delta
         else:
-            return (unmapped_page << 6) + offset
+            ret_addr = (unmapped_page << 6) + offset
+
+        return ret_addr << 6
 
 def read_benchmark_trace(benchmark_path, multi_label):
     '''

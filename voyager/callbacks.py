@@ -22,6 +22,10 @@ class NBatchLogger(tf.keras.callbacks.Callback):
         self.step['train'] = start_step
         self.metric_cache = {batch_type: {} for batch_type in NBatchLogger.BATCH_TYPES}
 
+    # Reset state every time we begin training. This is for the online learning approach
+    def on_train_begin(self, logs):
+        self.step = {batch_type: 0 for batch_type in NBatchLogger.BATCH_TYPES}
+
     def on_train_batch_end(self, batch, logs):
         self._on_batch_end(batch, logs, 'train')
 

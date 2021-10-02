@@ -13,7 +13,7 @@ class ModelWrapper:
     VERBOSITY_PROGBAR = 1
     VERBOSITY_EPOCH   = 2
 
-    def __init__(self, config, benchmark, verbosity=1, callbacks=None):
+    def __init__(self, config, benchmark, verbosity=1):
         self.config = config
         self.benchmark = benchmark
         self.verbosity = verbosity
@@ -156,7 +156,7 @@ class ModelWrapper:
             step += 1
 
             # Advance an epoch
-            if step >= self.config.steps_per_epoch:
+            if step > self.config.steps_per_epoch:
                 # Evaluate on validation dataset if it was passed in
                 if valid_ds is not None:
                     val_logs = self.evaluate([valid_ds])
@@ -164,6 +164,8 @@ class ModelWrapper:
                 self.callbacks.on_epoch_end(epoch, logs)
                 step = 0
                 epoch += 1
+                if epoch >= self.config.num_epochs:
+                    break
                 self.callbacks.on_epoch_begin(epoch)
                 self.reset_metrics()
 
@@ -174,6 +176,36 @@ class ModelWrapper:
 
         self.callbacks.on_epoch_end(epoch)
         self.callbacks.on_train_end(logs)
+
+    def train_online(self, prefetch_file=None, callbacks=None):
+        # Create datasets
+        train_datasets, eval_datasets = self.benchmark.split(self.config, online=True)
+        # Change # of epochs to # of online epochs
+        orig_num_epochs = self.config.num_epochs
+        self.config.num_epochs = self.config.num_epochs_online
+
+        # Save inst_ids and addresses for generating a ML-DPC prefetch file
+        inst_ids = []
+        addresses = []
+
+        # Online training phase
+        for train_ds, eval_ds in zip(train_datasets, eval_datasets):
+            # Train while showing eval performance
+            self.train(train_ds, eval_ds)
+            # Generate on eval dataset
+            cur_inst_ids, cur_addresses, _ = self.generate([eval_ds])
+            inst_ids.extend(cur_inst_ids)
+            addresses.extend(cur_addresses)
+
+        # Restore original # of epochs
+        self.config.num_epochs = orig_num_epochs
+
+        # Create a prefetch file if path is given
+        if prefetch_file is not None:
+            create_prefetch_file(prefetch_file, inst_ids, addresses)
+        else:
+            # Return if no prefetch file specified
+            return inst_ids, addresses
 
     @tf.function
     def evaluate_step(self, x, y):
@@ -258,7 +290,7 @@ class ModelWrapper:
                 pred_offsets = tf.argmax(offset_logits, -1).numpy().tolist()
 
                 # Unmap addresses
-                for xi, inst_id, pred_page, pred_offset in zip(x.numpy().tolist(), batch_inst_ids.numpy().reshape(-1).tolist(), pred_pages, pred_offsets):
+                for xi, inst_id, pred_page, pred_offset in zip(x.numpy().tolist(), batch_inst_ids.numpy().tolist(), pred_pages, pred_offsets):
                     # OOV
                     if pred_page == 0:
                         continue
@@ -272,9 +304,9 @@ class ModelWrapper:
         # Create a prefetch file if path is given
         if prefetch_file is not None:
             create_prefetch_file(prefetch_file, inst_ids, addresses)
-
-        # Return if no prefetch file
-        return inst_ids, addresses, logs
+        else:
+            # Return if no prefetch file
+            return inst_ids, addresses, logs
 
     def reset_metrics(self):
         # Reset all the metrics with one convenient call
