@@ -6,7 +6,7 @@ Then, generate condor launch scripts for each configuration +
 benchmark.
 
 A file that lists each launch condor config line-by-line is
-saved to {BASE_DIR}/condor_configs.txt. You can run a script
+saved to {BASE_DIR}/condor_configs_train.txt. You can run a script
 like Quangmire/condor/condor_submit_batch.py to launch them.
 
 Based on: github.com/Quangmire/condor/condor_pc.py
@@ -20,8 +20,8 @@ import yaml
 from condor_common import generate # Used for template for condor submit scripts
 
 VOYAGER_PATH = '/u/cmolder/GitHub/voyager/'
-BASE_CONFIG_PATH = '/u/cmolder/GitHub/voyager/configs/base_mod.yaml'
-BASE_DIR = '/scratch/cluster/cmolder/voyager_hypertuning/learningrate_batchsize/'
+BASE_CONFIG_PATH = '/u/cmolder/GitHub/voyager/configs/base_mod_lstm.yaml'
+BASE_DIR = '/scratch/cluster/cmolder/voyager_hypertuning/lstm/'
 USE_GPU = True
 PRINT_EVERY = 100 # Number of steps between printing to log
 CHECKPOINT_EVERY = 5000 # Number of steps between checkpoints
@@ -32,13 +32,20 @@ TRACES = [
 ]
 
 VARIATIONS = {
-    'learning_rate': [0.01, 0.001, 0.0001, 0.00001], # best mcf-s0: 0.001 (run 1)
-    'batch_size': [32, 64, 128, 256, 512],           # best mcf-s0: 512   (run 1)
+    # - learningrate_batchsize/
+    #'learning_rate': [0.01, 0.001, 0.0001, 0.00001], # best mcf-s0: 0.001 (run 1)
+    #'batch_size': [32, 64, 128, 256, 512],           # best mcf-s0: 512   (run 1)
+    # - embeddingsizes/
     #'pc_embed_size': [16, 32, 64, 128, 256],         # (pc=128, page=512, bsz=512) runs out of memory on GTX 1080
     #'page_embed_size': [32, 64, 128, 256]
+    # - experts_lrdecay/
     #'page_embed_size': [64, 256],
     #'num_experts': [10, 25, 50, 75, 100],
     #'learning_rate_decay': [1, 2] # 1 disables LR decay
+    # - lstm/
+    'lstm_dropout': [0.6, 0.8],
+    'lstm_size': [32, 64, 128, 256],
+    'lstm_layers': [1, 2],
 }
 
 # Template for bash script

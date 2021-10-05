@@ -65,23 +65,37 @@ def main():
     args = parser.parse_args()
 
     # Parse config file
+    print('Loading config...')
     config = load_config(args.config, args.debug)
     print(config)
 
     # Load and process benchmark
+    print('Reading benchmark trace...')
     benchmark = read_benchmark_trace(args.benchmark)
+    print('Processing benchmark...')
     train_ds, valid_ds, test_ds = benchmark.split(config, args.start_epoch, args.start_step)
 
     # Create and compile the model
+    print('Compiling model..')
     model, metrics = HierarchicalLSTM.compile_model(config, benchmark.num_pcs(), benchmark.num_pages())
 
-    # Set-up callbacks for training
+    # Set-up callbacks for generation
+    # print('Setting up callbacks...')
     # callbacks = setup_callbacks(args, config, model, metrics)
 
+    print('Loading model...')
     model.load(args.model_path)
+
+    print('Generating prefetch trace...')
+    ds_len = len(test_ds)
     with open(args.prefetch_file, 'w') as f:
         for i, (x, _) in enumerate(test_ds):
             logits = model(x, training=False)
+
+            # Print an update every (args.print_every) samples.
+            if args.print_every is not None:
+                if i % args.print_every == 0:
+                    print(f'({i/ds_len*100:4.1f} %) Sample {i} / {ds_len}')
 
             # Get prediction from logits
             if config.sequence_loss:

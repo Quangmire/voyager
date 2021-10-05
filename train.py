@@ -91,21 +91,27 @@ def main():
     args = parser.parse_args()
 
     # Parse config file
+    print('Loading config...')
     config = load_config(args.config, args.debug)
     print(config)
 
     # Load and process benchmark
+    print('Reading benchmark trace...')
     benchmark = read_benchmark_trace(args.benchmark)
+    print('Processing benchmark...')
     train_ds, valid_ds, test_ds = benchmark.split(config, args.start_epoch, args.start_step)
 
     # Create and compile the model
+    print('Compiling model..')
     model, metrics = HierarchicalLSTM.compile_model(config, benchmark.num_pcs(), benchmark.num_pages())
 
     # Set-up callbacks for training
+    print('Setting up callbacks...')
     callbacks = setup_callbacks(args, config, model, metrics)
 
     # If resuming partway through an epoch, finish it before starting the rest
     # Note that here and main training loop below, initial_epoch is zero-indexed hence the "- 1"
+    print('Training model...')
     if args.start_step != 0:
         print('Finishing resume epoch')
         model.fit(

@@ -5,12 +5,10 @@ scripts to generate a ChampSim prefetch trace for
 each model.
 
 A file that lists each launch condor config line-by-line
-is saved to {BASE_DIR}/condor_configs_tracegen.txt. You
+is saved to {BASE_DIR}/condor_configs_generate.txt. You
 like Quangmire/condor/condor_submit_batch.py to launch them.
 
 Based on: github.com/Quangmire/condor/condor_pc.py
-
-TODO Work in progress (awaiting script)
 """
 
 
@@ -22,11 +20,10 @@ import yaml
 from condor_common import generate # Used for template for condor submit scripts
 
 VOYAGER_PATH = '/u/cmolder/GitHub/voyager/'
-BASE_CONFIG_PATH = '/u/cmolder/GitHub/voyager/configs/base_mod.yaml'
-BASE_DIR = '/scratch/cluster/cmolder/voyager_hypertuning/learningrate_batchsize/'
+BASE_CONFIG_PATH = '/u/cmolder/GitHub/voyager/configs/base_mod_lstm.yaml'
+BASE_DIR = '/scratch/cluster/cmolder/voyager_hypertuning/lstm/'
 USE_GPU = True
 PRINT_EVERY = 100 # Number of steps between printing to log
-CHECKPOINT_EVERY = 5000 # Number of steps between checkpoints
 
 TRACE_DIR = '/scratch/cluster/qduong/ML-DPC/data/load_traces/'
 TRACES = [
@@ -34,26 +31,30 @@ TRACES = [
 ]
 
 VARIATIONS = {
-    'learning_rate': [0.01, 0.001, 0.0001, 0.00001], # best mcf-s0: 0.001 (run 1)
-    'batch_size': [32, 64, 128, 256, 512],           # best mcf-s0: 512   (run 1)
+    # - learningrate_batchsize/
+    #'learning_rate': [0.01, 0.001, 0.0001, 0.00001], # best mcf-s0: 0.001 (run 1)
+    #'batch_size': [32, 64, 128, 256, 512],           # best mcf-s0: 512   (run 1)
+    # - embeddingsizes/
     #'pc_embed_size': [16, 32, 64, 128, 256],         # (pc=128, page=512, bsz=512) runs out of memory on GTX 1080
     #'page_embed_size': [32, 64, 128, 256]
+    # - experts_lrdecay/
     #'page_embed_size': [64, 256],
     #'num_experts': [10, 25, 50, 75, 100],
     #'learning_rate_decay': [1, 2] # 1 disables LR decay
+    # - lstm/
+    'lstm_dropout': [0.6, 0.8],
+    'lstm_size': [32, 64, 128, 256],
+    'lstm_layers': [1, 2],
 }
 
-
 # Template for bash script
-# TODO Implement correctly
 SH_TEMPLATE = '''#!/bin/bash
 source /u/cmolder/miniconda3/etc/profile.d/conda.sh
 conda activate tensorflow
 python3 -u {script_file} --benchmark {benchmark} \\
-    --config {config_file}  --tb-dir {tensorboard_dir} \\
+    --config {config_file}  \\
     --prefetch-file {prefetch_file} \\
     --model-path {model_path} --print-every {print_every} \\
-    --checkpoint-every {checkpoint_period}
 '''
 
 
@@ -135,11 +136,9 @@ def main():
                     script_file=os.path.join(VOYAGER_PATH, 'generate.py'),
                     benchmark=os.path.join(TRACE_DIR, tr),
                     config_file=config_file,
-                    tensorboard_dir=tensorboard_dir,
                     model_path=model_file,
                     prefetch_file=prefetch_file,
-                    print_every=PRINT_EVERY,
-                    checkpoint_period=CHECKPOINT_EVERY,
+                    print_every=PRINT_EVERY
                 ), file=f)
             os.chmod(script_file, 0o777) # Make script executable
 
