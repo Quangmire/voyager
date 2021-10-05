@@ -1,4 +1,4 @@
-name: "Base Voyager with Sequence Loss"
+name: "PC Voyager with Sequence Loss"
 # Training Parameters
 batch_size: 64
 learning_rate: 0.001
@@ -9,10 +9,10 @@ num_epochs_online: 20
 steps_per_epoch: 80000
 train_split: 0.8
 valid_split: 0.1
-multi_label: False
+multi_label: True
 # Input Parameters
 sequence_loss: True     # Train with sequence loss instead of cross entropy on last timestep
-use_current_pc: False   # Feed in PC of current load instead of previous load at each timestep
+use_current_pc: True    # Feed in PC of current load instead of previous load at each timestep
 pc_localization: False  # Train on PC localized stream instead of global stream
 sequence_length: 16
 # LSTM Parameters

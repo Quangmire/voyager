@@ -22,6 +22,10 @@ class NBatchLogger(tf.keras.callbacks.Callback):
         self.step['train'] = start_step
         self.metric_cache = {batch_type: {} for batch_type in NBatchLogger.BATCH_TYPES}
 
+    # Reset state every time we begin training. This is for the online learning approach
+    def on_train_begin(self, logs):
+        self.step = {batch_type: 0 for batch_type in NBatchLogger.BATCH_TYPES}
+
     def on_train_batch_end(self, batch, logs):
         self._on_batch_end(batch, logs, 'train')
 
@@ -42,6 +46,7 @@ class NBatchLogger(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs):
         # Reset counters and update epoch counter
         for batch_type in NBatchLogger.BATCH_TYPES:
+            self.print(batch_type)
             self.step[batch_type] = 0
         self.epoch += 1
 
@@ -132,7 +137,8 @@ class ResumeCheckpoint(tf.keras.callbacks.Callback):
     https://gitlab.idiap.ch/bob/bob.learn.tensorflow/-/blob/7a498fd907de139fb89bdfecb092a8070a546f79/bob/learn/tensorflow/callbacks.py#L10
     '''
 
-    def __init__(self, model_path, backups, checkpoint_every, epoch=1, step=0, resume=False):
+    def __init__(self, model, model_path, backups, checkpoint_every, epoch=1, step=0, resume=False):
+        self.model = model
         self.model_path = os.path.join(model_path + '_resume', 'model')
         self.backup_path = os.path.join(model_path + '_resume', 'backup.json')
 
@@ -141,9 +147,12 @@ class ResumeCheckpoint(tf.keras.callbacks.Callback):
         self.step = step
         self.resume = resume
         self.backups = backups
+        self.backups['optim'] = self.model.optimizer
+        for metric in self.model.metrics:
+            self.backups[metric.name] = metric
 
     def backup(self):
-        print('Creating checkpoint')
+        print('\nCreating checkpoint...', end='')
 
         # Backup model
         self.model.save_weights(self.model_path)
@@ -166,7 +175,7 @@ class ResumeCheckpoint(tf.keras.callbacks.Callback):
         print('Done')
 
     def restore(self):
-        print('Restoring checkpoint')
+        print('\nRestoring checkpoint...', end='')
 
         # Reload model state
         self.model.load(self.model_path)
@@ -183,7 +192,7 @@ class ResumeCheckpoint(tf.keras.callbacks.Callback):
                     weights = config.pop('weights')
                     for k, v in config.items():
                         setattr(self.model.optimizer, k, v)
-                    
+
                     # Need to do a single forward pass so that model is initialized
                     self.model(tf.zeros((1, self.model.sequence_length * 3,)))
 
@@ -196,6 +205,7 @@ class ResumeCheckpoint(tf.keras.callbacks.Callback):
 
                 elif name in self.backups:
                     self.backups[name].load_config(config)
+        print('Done')
 
     # Save every N steps
     def on_train_batch_end(self, batch, logs):

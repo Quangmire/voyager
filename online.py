@@ -25,25 +25,14 @@ if 'CUDA_VISIBLE_DEVICES' not in os.environ:
 
 def main():
     parser = get_parser()
-    parser.add_argument('--train', action='store_true', default=False, help='Generate for train dataset too')
-    parser.add_argument('--valid', action='store_true', default=False, help='Generate for valid dataset too')
-    parser.add_argument('--no-test', action='store_true', default=False, help='Do not generate for the test dataset')
+    parser.add_argument('--prefetch-file', required=True, help='Path to generated prefetch file')
     args = parser.parse_args()
-
-    assert args.model_path, 'No model path provided. Please provide a path to --model-path.'
 
     # Create model wrapper
     model_wrapper = ModelWrapper.setup_from_args(args)
-    model_wrapper.load(args.model_path)
 
-    # Start testing the model
-    model_wrapper.evaluate(
-        model_wrapper.get_datasets(
-            train=args.train,
-            valid=args.valid,
-            test=not args.no_test,
-        ),
-    )
+    # Start training the model
+    model_wrapper.train_online(args.prefetch_file)
 
 if __name__ == '__main__':
     main()
