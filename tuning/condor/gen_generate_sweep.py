@@ -5,7 +5,7 @@ scripts to generate a ChampSim prefetch trace for
 each model.
 
 A file that lists each launch condor config line-by-line
-is saved to {BASE_DIR}/condor_configs_tracegen.txt. You
+is saved to {BASE_DIR}/condor_configs_generate.txt. You
 like Quangmire/condor/condor_submit_batch.py to launch them.
 
 Based on: github.com/Quangmire/condor/condor_pc.py
@@ -22,10 +22,9 @@ SH_TEMPLATE = '''#!/bin/bash
 source /u/cmolder/miniconda3/etc/profile.d/conda.sh
 conda activate tensorflow
 python3 -u {script_file} --benchmark {benchmark} \\
-    --config {config_file}  --tb-dir {tensorboard_dir} \\
+    --config {config_file}  \\
     --prefetch-file {prefetch_file} \\
     --model-path {model_path} --print-every {print_every} \\
-    --checkpoint-every {checkpoint_period}
 '''
 
 def main():
@@ -95,7 +94,6 @@ def main():
                     script_file=os.path.join(config.meta.software_dirs.voyager, 'generate.py'),
                     benchmark=tr_path,
                     config_file=config_file,
-                    tensorboard_dir=tensorboard_dir,
                     model_path=model_file,
                     prefetch_file=prefetch_file,
                     print_every=config.meta.print_every,

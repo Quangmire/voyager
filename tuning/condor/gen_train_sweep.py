@@ -6,7 +6,7 @@ Then, generate condor launch scripts for each configuration +
 benchmark.
 
 A file that lists each launch condor config line-by-line is
-saved to {BASE_DIR}/condor_configs.txt. You can run a script
+saved to {BASE_DIR}/condor_configs_train.txt. You can run a script
 like Quangmire/condor/condor_submit_batch.py to launch them.
 
 Based on: github.com/Quangmire/condor/condor_pc.py
