@@ -9,7 +9,7 @@ class BenchmarkTrace:
     Benchmark trace parsing class
     '''
 
-    def __init__(self, multi_label=False):
+    def __init__(self, multi_label=False, offset_bits=6):
         self.pc_mapping = {'oov': 0}
         self.page_mapping = {'oov': 0}
         self.reverse_page_mapping = {}
@@ -17,6 +17,7 @@ class BenchmarkTrace:
         self.online_cutoffs = []
         # Boolean value indicating whether or not to use the multiple labeling scheme
         self.multi_label = multi_label
+        self.offset_bits = offset_bits
         # Stores pc localized streams
         self.pc_addrs = {}
         self.pc_addrs_idx = {}
@@ -197,12 +198,13 @@ class BenchmarkTrace:
 
         TODO: Handle the pc localization
         '''
+        offset_bitmask = (1 << self.offset_bits) - 1
         cache_line = addr >> 6
-        page, offset = cache_line >> 6, cache_line & 0x3f
+        page, offset = cache_line >> self.offset_bits, cache_line & offset_bitmask
 
         if pc not in self.pc_mapping:
             self.pc_mapping[pc] = len(self.pc_mapping)
-            # THese are needed for PC localization
+            # These are needed for PC localization
             self.pc_addrs[self.pc_mapping[pc]] = []
             self.pc_addrs_idx[self.pc_mapping[pc]] = 0
 
@@ -372,22 +374,22 @@ class BenchmarkTrace:
             prev_page = x[2 * sequence_length - 1]
             prev_offset = x[-1]
             unmapped_prev_page = self.reverse_page_mapping[prev_page]
-            prev_addr = (unmapped_prev_page << 6) + prev_offset
+            prev_addr = (unmapped_prev_page << self.offset_bits) + prev_offset
             delta = int(unmapped_page[1:])
             if unmapped_page[0] == '+':
                 ret_addr = prev_addr + delta
             else:
                 ret_addr = prev_addr - delta
         else:
-            ret_addr = (unmapped_page << 6) + offset
+            ret_addr = (unmapped_page << self.offset_bits) + offset
 
         return ret_addr << 6
 
-def read_benchmark_trace(benchmark_path, multi_label):
+def read_benchmark_trace(benchmark_path, multi_label, offset_bits):
     '''
     Reads and processes the trace for a benchmark
     '''
-    benchmark = BenchmarkTrace(multi_label)
+    benchmark = BenchmarkTrace(multi_label, offset_bits)
 
     if benchmark_path.endswith('.txt'):
         with open(benchmark_path, 'r') as f:

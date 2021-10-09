@@ -22,6 +22,9 @@ class ModelWrapper:
         self.args = None
 
         # Create a model
+        print('DEBUG : Creating a model with...')
+        print('    pc vocab size   :', benchmark.num_pcs())
+        print('    page vocab size :', benchmark.num_pages())
         self.model = HierarchicalLSTM.compile_model(config, benchmark.num_pcs(), benchmark.num_pages())
         self._compile_metrics()
 
@@ -333,7 +336,7 @@ class ModelWrapper:
         print(config)
 
         # Load and process benchmark
-        benchmark = read_benchmark_trace(args.benchmark, config.multi_label)
+        benchmark = read_benchmark_trace(args.benchmark, config.multi_label, config.offset_bits)
 
         # Create and compile the model
         model_wrapper = ModelWrapper(config, benchmark, verbosity=1 if args.print_every is None else 2)
