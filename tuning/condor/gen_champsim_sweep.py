@@ -25,7 +25,8 @@ from gen_utils import generate, get_parser, load_tuning_config, \
 SH_TEMPLATE = '''#!/bin/bash
 source /u/cmolder/miniconda3/etc/profile.d/conda.sh
 conda activate tensorflow
-python3 -u {script_file} run {prefetch_trace_file}
+cd {champsim_dir}
+python3 -u {script_file} run {champsim_trace_file} --prefetch {prefetch_trace_file} --no-base --results {results_dir}
 '''
 
 
@@ -51,6 +52,8 @@ def main():
 
     # For each trace, generate each permuted configuration and its script.
     for tr_path in trace_paths:
+        # Splice .txt from file name
+        tr_path = tr_path.replace('.txt', '.trace')
         tr = tr_path.split('/')[-1].split('.')[1]
         for var, var_name in zip(variations, variation_names):
             # Setup initial output directories/files per experiment
@@ -59,6 +62,7 @@ def main():
             condor_file = os.path.join(base_dir, 'condor', tr, 'champsim', f'{var_name}.condor')
             script_file = os.path.join(base_dir, 'scripts', tr, 'champsim', f'{var_name}.sh')
             prefetch_file = os.path.join(base_dir, 'prefetch_traces', tr, f'{var_name}.txt')
+            results_dir = os.path.join(base_dir, 'champsim_results', tr, f'{var_name}')
             
             print(f'\nFiles for {tr}, {var_name}:')
             print(f'    output log  : {log_file_base}.OUT')
@@ -68,6 +72,7 @@ def main():
             print(f'    condor      : {condor_file}')
             print(f'    script      : {script_file}')
             print(f'    prefetches  : {prefetch_file}')
+            print(f'    results dir : {results_dir}')
 
             # Create directories
             os.makedirs(os.path.join(base_dir, 'logs', tr, 'champsim'), exist_ok=True)
@@ -75,6 +80,7 @@ def main():
             os.makedirs(os.path.join(base_dir, 'condor', tr, 'champsim'), exist_ok=True)
             os.makedirs(os.path.join(base_dir, 'scripts', tr,  'champsim'), exist_ok=True)
             os.makedirs(os.path.join(base_dir, 'prefetch_traces', tr), exist_ok=True)
+            os.makedirs(os.path.join(base_dir, results_dir), exist_ok=True)
 
             # Build condor file
             condor = generate(
@@ -90,8 +96,11 @@ def main():
             # Build script file
             with open(script_file, 'w') as f:
                 print(SH_TEMPLATE.format(
-                    script_file=os.path.join(config.meta.software_dirs.champsim, 'ml_prefetch_sim.py'),
+                    champsim_dir=config.meta.software_dirs.champsim,
+                    script_file='ml_prefetch_sim.py',
+                    champsim_trace_file=tr_path,
                     prefetch_trace_file=prefetch_file,
+                    results_dir=results_dir
                 ), file=f)
             
             # Make script executable
@@ -102,7 +111,7 @@ def main():
 
     print(f'\nCondor file list : {os.path.join(base_dir, "condor_configs_champsim.txt")}')
     with open(
-        os.path.join(base_dir, 'condor_configs.txt'), 'w'
+        os.path.join(base_dir, 'condor_configs_champsim.txt'), 'w'
     ) as f:
         for cf in condor_files:
             print(cf, file=f)
