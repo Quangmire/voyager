@@ -54,10 +54,10 @@ def main():
         tr = tr_path.split('/')[-1].split('.')[1]
         for var, var_name in zip(variations, variation_names):
             # Setup initial output directories/files per experiment
-            log_file_base = os.path.join(base_dir, 'champsim', 'logs', tr, var_name)
-            config_file = os.path.join(base_dir, 'champsim', 'configs', f'{var_name}.yaml')
-            condor_file = os.path.join(base_dir, 'champsim', 'condor', tr, f'{var_name}.condor')
-            script_file = os.path.join(base_dir, 'champsim', 'scripts', tr, f'{var_name}.sh')
+            log_file_base = os.path.join(base_dir, 'logs', tr, 'champsim', var_name)
+            config_file = os.path.join(base_dir, 'configs', f'{var_name}.yaml')
+            condor_file = os.path.join(base_dir, 'condor', tr, 'champsim', f'{var_name}.condor')
+            script_file = os.path.join(base_dir, 'scripts', tr, 'champsim', f'{var_name}.sh')
             prefetch_file = os.path.join(base_dir, 'prefetch_traces', tr, f'{var_name}.txt')
             
             print(f'\nFiles for {tr}, {var_name}:')
@@ -70,10 +70,10 @@ def main():
             print(f'    prefetches  : {prefetch_file}')
 
             # Create directories
-            os.makedirs(os.path.join(base_dir, 'logs', var_name), exist_ok=True)
+            os.makedirs(os.path.join(base_dir, 'logs', tr, 'champsim'), exist_ok=True)
             os.makedirs(os.path.join(base_dir, 'configs'), exist_ok=True)
-            os.makedirs(os.path.join(base_dir, 'condor', var_name), exist_ok=True)
-            os.makedirs(os.path.join(base_dir, 'scripts', var_name), exist_ok=True)
+            os.makedirs(os.path.join(base_dir, 'condor', tr, 'champsim'), exist_ok=True)
+            os.makedirs(os.path.join(base_dir, 'scripts', tr,  'champsim'), exist_ok=True)
             os.makedirs(os.path.join(base_dir, 'prefetch_traces', tr), exist_ok=True)
 
             # Build condor file
