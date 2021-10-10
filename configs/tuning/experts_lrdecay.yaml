@@ -15,7 +15,6 @@ config: # If an array, it generates permutations of the values. Otherwise, it ke
     # Training Parameters
     batch_size: 512
     learning_rate: 0.001
-    learning_rate_decay: [1, 2]
     min_learning_rate: 0.0001
     num_epochs: 25
     num_epochs_online: 20
@@ -33,6 +32,7 @@ config: # If an array, it generates permutations of the values. Otherwise, it ke
     pc_embed_size: 64
     page_embed_size: [64, 256]
     num_experts: [10, 25, 50, 75, 100]
+    learning_rate_decay: [1, 2]
     lstm_size: 256
     lstm_dropout: 0.8
     lstm_layers: 1

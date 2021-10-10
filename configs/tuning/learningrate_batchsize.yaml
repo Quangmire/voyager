@@ -13,8 +13,8 @@ traces: ["spec17/605.mcf-s0.txt.xz"]
 config: # If an array, it generates permutations of the values. Otherwise, it keeps them constant.
     name: "Base Voyager"
     # Training Parameters
-    batch_size: [32, 64, 128, 256, 512],
-    learning_rate: [0.01, 0.001, 0.0001, 0.00001],
+    learning_rate: [0.01, 0.001, 0.0001, 0.00001]
+    batch_size: [32, 64, 128, 256, 512]
     learning_rate_decay: 2
     min_learning_rate: 0.0001
     num_epochs: 25

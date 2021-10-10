@@ -33,6 +33,6 @@ config: # If an array, it generates permutations of the values. Otherwise, it ke
     pc_embed_size: 64
     page_embed_size: 64
     num_experts: 100
-    lstm_size: [32, 64, 128, 256]
     lstm_dropout: [0.6, 0.8]
+    lstm_size: [32, 64, 128, 256]
     lstm_layers: [1, 2]
