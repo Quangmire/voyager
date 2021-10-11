@@ -18,6 +18,7 @@ class BenchmarkTrace:
         # Boolean value indicating whether or not to use the multiple labeling scheme
         self.multi_label = multi_label
         self.offset_bits = offset_bits
+        self.offset_mask = (1 << offset_bits) - 1
         # Stores pc localized streams
         self.pc_addrs = {}
         self.pc_addrs_idx = {}
@@ -75,7 +76,7 @@ class BenchmarkTrace:
             offsets = []
 
             # Cache line of next load
-            cur_addr = (self.reverse_page_mapping[mapped_page] << 6) + offset
+            cur_addr = (self.reverse_page_mapping[mapped_page] << self.offset_bits) + offset
 
             # DELTAS FOR INFREQUENT ADDRESSES
             if self.count[(mapped_page, offset)] <= 2:
@@ -88,13 +89,13 @@ class BenchmarkTrace:
                     # Only do deltas for pages within 256 pages, which as of right now
                     # experimentally looks like it gives good coverage without unnecessarily
                     # blowing up the vocabulary size
-                    if 0 <= (abs(dist) >> 6) <= 256:
+                    if 0 <= (abs(dist) >> self.offset_bits) <= 256:
                         dist_page = None
-                        dist_offset = abs(dist) & 0x3f
+                        dist_offset = abs(dist) & self.offset_mask
                         if dist > 0:
-                            dist_page = '+' + str(abs(dist) >> 6)
+                            dist_page = '+' + str(abs(dist) >> self.offset_bits)
                         elif dist < 0:
-                            dist_page = '-' + str(abs(dist) >> 6)
+                            dist_page = '-' + str(abs(dist) >> self.offset_bits)
 
                         # We don't care about when the next address was the previous one
                         if dist_page is not None:
@@ -135,7 +136,7 @@ class BenchmarkTrace:
             # TODO: Possibly need to examine this default distance value to make sure that it
             #       isn't too small (or large) for accessing the max temporal distance
             for (_, _, spatial_page, spatial_offset) in self.data[i:i + 10]:
-                if 0 < 64 * (spatial_page - mapped_page) + (spatial_offset - offset) < 257:
+                if 0 < (1 << self.offset_bits) * (spatial_page - mapped_page) + (spatial_offset - offset) < 257:
                     mapped_pages.append(spatial_page)
                     offsets.append(spatial_offset)
                     break
@@ -198,9 +199,8 @@ class BenchmarkTrace:
 
         TODO: Handle the pc localization
         '''
-        offset_bitmask = (1 << self.offset_bits) - 1
         cache_line = addr >> 6
-        page, offset = cache_line >> self.offset_bits, cache_line & offset_bitmask
+        page, offset = cache_line >> self.offset_bits, cache_line & self.offset_mask
 
         if pc not in self.pc_mapping:
             self.pc_mapping[pc] = len(self.pc_mapping)

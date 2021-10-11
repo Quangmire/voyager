@@ -6,12 +6,13 @@ from voyager.math import multi_one_hot, reduce_sum_det
 # implements some basic functionality that is extensively reused
 class CustomAccuracy(tf.keras.metrics.Metric):
 
-    def __init__(self, sequence_loss=False, multi_label=False, **kwargs):
+    def __init__(self, sequence_loss=False, multi_label=False, num_offsets=64, **kwargs):
         super(CustomAccuracy, self).__init__(**kwargs)
         self.correct = self.add_weight(name='correct', initializer='zeros')
         self.total = self.add_weight(name='total', initializer='zeros')
         self.sequence_loss = sequence_loss
         self.multi_label = multi_label
+        self.num_offsets = num_offsets
 
     def result(self):
         return self.correct / self.total * 100
@@ -72,8 +73,8 @@ class OverallPredictionHierarchicalAccuracy(CustomAccuracy):
         # RHS is (batch size x 1) tensor of predicted values
         # Result is (batch size x # labels per batch) boolean array where
         #   Result[i, j] = LHS[i, j] == RHS[i, 0]
-        page_correct = y_page_labels == tf.expand_dims(tf.argmax(y_pred[:, :-64], axis=-1, output_type=tf.int32), axis=-1)
-        offset_correct = y_offset_labels == tf.expand_dims(tf.argmax(y_pred[:, -64:], axis=-1, output_type=tf.int32), axis=-1)
+        page_correct = y_page_labels == tf.expand_dims(tf.argmax(y_pred[:, :-self.num_offsets], axis=-1, output_type=tf.int32), axis=-1)
+        offset_correct = y_offset_labels == tf.expand_dims(tf.argmax(y_pred[:, -self.num_offsets:], axis=-1, output_type=tf.int32), axis=-1)
 
         # Only correct overall if both page / offset are correct
         values = tf.logical_and(page_correct, offset_correct)
@@ -111,7 +112,7 @@ class PagePredictionHierarchicalAccuracy(CustomAccuracy):
         # RHS is (batch size x 1) tensor of predicted values
         # Result is (batch size x # labels per batch) boolean array where
         #   Result[i, j] = LHS[i, j] == RHS[i, 0]
-        page_correct = y_page_labels == tf.expand_dims(tf.argmax(y_pred[:, :-64], axis=-1, output_type=tf.int32), axis=-1)
+        page_correct = y_page_labels == tf.expand_dims(tf.argmax(y_pred[:, :-self.num_offsets], axis=-1, output_type=tf.int32), axis=-1)
 
         values = page_correct
         # We reduce along rows since we only need at least 1 label to be correct
@@ -148,7 +149,7 @@ class OffsetPredictionHierarchicalAccuracy(CustomAccuracy):
         # RHS is (batch size x 1) tensor of predicted values
         # Result is (batch size x # labels per batch) boolean array where
         #   Result[i, j] = LHS[i, j] == RHS[i, 0]
-        offset_correct = y_offset_labels == tf.expand_dims(tf.argmax(y_pred[:, -64:], axis=-1, output_type=tf.int32), axis=-1)
+        offset_correct = y_offset_labels == tf.expand_dims(tf.argmax(y_pred[:, -self.num_offsets:], axis=-1, output_type=tf.int32), axis=-1)
 
         values = offset_correct
         # We reduce along rows since we only need at least 1 label to be correct
@@ -184,8 +185,8 @@ class OverallHierarchicalAccuracy(CustomAccuracy):
 
         if self.multi_label:
             # Convert to multi one-hot tensor
-            y_page = multi_one_hot(y_page_labels, tf.shape(y_pred)[-1] - 64)
-            y_offset = multi_one_hot(y_offset_labels, 64)
+            y_page = multi_one_hot(y_page_labels, tf.shape(y_pred)[-1] - self.num_offsets)
+            y_offset = multi_one_hot(y_offset_labels, self.num_offsets)
 
             # LHS[i, j] is True if y_page[i, j] is 1
             # RHS[i, j] is True if y_page[i, j] is non-negative. This was chosen due to
@@ -193,12 +194,12 @@ class OverallHierarchicalAccuracy(CustomAccuracy):
             # We'll denote the logical and as AND
             # The gather creates an array the size of the labels where
             #     Result[i, j] = AND[Label[i,j]]
-            page_correct = tf.gather((y_page > 0.5) & (y_pred[:, :-64] >= 0), y_page_labels, batch_dims=1)
-            offset_correct = tf.gather((y_offset > 0.5) & (y_pred[:, -64:] >= 0), y_offset_labels, batch_dims=1)
+            page_correct = tf.gather((y_page > 0.5) & (y_pred[:, :-self.num_offsets] >= 0), y_page_labels, batch_dims=1)
+            offset_correct = tf.gather((y_offset > 0.5) & (y_pred[:, -self.num_offsets:] >= 0), y_offset_labels, batch_dims=1)
         else:
             # Compare labels against argmax
-            page_correct = y_page_labels == tf.argmax(y_pred[:, :-64], -1, output_type=tf.int32)
-            offset_correct = y_offset_labels == tf.argmax(y_pred[:, -64:], -1, output_type=tf.int32)
+            page_correct = y_page_labels == tf.argmax(y_pred[:, :-self.num_offsets], -1, output_type=tf.int32)
+            offset_correct = y_offset_labels == tf.argmax(y_pred[:, -self.num_offsets:], -1, output_type=tf.int32)
 
         # Only correct overall if both page / offset are correct
         values = tf.logical_and(page_correct, offset_correct)
@@ -237,7 +238,7 @@ class PageHierarchicalAccuracy(CustomAccuracy):
 
         if self.multi_label:
             # Convert to multi one-hot tensor
-            y_page = multi_one_hot(y_page_labels, tf.shape(y_pred)[-1] - 64)
+            y_page = multi_one_hot(y_page_labels, tf.shape(y_pred)[-1] - self.num_offsets)
 
             # LHS[i, j] is True if y_page[i, j] is 1
             # RHS[i, j] is True if y_page[i, j] is non-negative. This was chosen due to
@@ -245,10 +246,10 @@ class PageHierarchicalAccuracy(CustomAccuracy):
             # We'll denote the logical and as AND
             # The gather creates an array the size of the labels where
             #     Result[i, j] = AND[Label[i,j]]
-            page_correct = (y_page > 0.5) & (y_pred[:, :-64] >= 0)
+            page_correct = (y_page > 0.5) & (y_pred[:, :-self.num_offsets] >= 0)
         else:
             # Compare labels against argmax
-            page_correct = y_page_labels == tf.argmax(y_pred[:, :-64], -1, output_type=tf.int32)
+            page_correct = y_page_labels == tf.argmax(y_pred[:, :-self.num_offsets], -1, output_type=tf.int32)
 
         values = page_correct
         values = tf.cast(values, self.dtype)
@@ -285,7 +286,7 @@ class OffsetHierarchicalAccuracy(CustomAccuracy):
 
         if self.multi_label:
             # Convert to multi one-hot tensor
-            y_offset = multi_one_hot(y_offset_labels, 64)
+            y_offset = multi_one_hot(y_offset_labels, self.num_offsets)
 
             # LHS[i, j] is True if y_page[i, j] is 1
             # RHS[i, j] is True if y_page[i, j] is non-negative. This was chosen due to
@@ -293,10 +294,10 @@ class OffsetHierarchicalAccuracy(CustomAccuracy):
             # We'll denote the logical and as AND
             # The gather creates an array the size of the labels where
             #     Result[i, j] = AND[Label[i,j]]
-            offset_correct = (y_offset > 0.5) & (y_pred[:, -64:] >= 0)
+            offset_correct = (y_offset > 0.5) & (y_pred[:, -self.num_offsets:] >= 0)
         else:
             # Compare labels against argmax
-            offset_correct = y_offset_labels == tf.argmax(y_pred[:, -64:], -1, output_type=tf.int32)
+            offset_correct = y_offset_labels == tf.argmax(y_pred[:, -self.num_offsets:], -1, output_type=tf.int32)
 
         values = offset_correct
         values = tf.cast(values, self.dtype)

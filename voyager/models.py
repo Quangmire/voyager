@@ -29,7 +29,7 @@ class HierarchicalLSTM(tf.keras.Model):
         self.epoch = 1
 
         # Model params
-        self.offset_size = 64
+        self.offset_size = (1 << config.offset_bits)
         self.pc_embed_size = config.pc_embed_size
         self.page_embed_size = config.page_embed_size
         self.offset_embed_size = config.page_embed_size * config.num_experts
@@ -144,25 +144,26 @@ class HierarchicalLSTM(tf.keras.Model):
         Create and compile the model
         '''
         model = HierarchicalLSTM(config, num_unique_pcs, num_unique_pages)
+        num_offsets = (1 << config.offset_bits)
 
         if config.sequence_loss:
-            loss = HierarchicalSequenceLoss(multi_label=config.multi_label)
+            loss = HierarchicalSequenceLoss(multi_label=config.multi_label, num_offsets=num_offsets)
         else:
-            loss = HierarchicalCrossEntropyWithLogitsLoss(multi_label=config.multi_label)
+            loss = HierarchicalCrossEntropyWithLogitsLoss(multi_label=config.multi_label, num_offsets=num_offsets)
 
         metrics = [
-            PageHierarchicalAccuracy(sequence_loss=config.sequence_loss, multi_label=config.multi_label),
-            OffsetHierarchicalAccuracy(sequence_loss=config.sequence_loss, multi_label=config.multi_label),
-            OverallHierarchicalAccuracy(sequence_loss=config.sequence_loss, multi_label=config.multi_label),
+            PageHierarchicalAccuracy(sequence_loss=config.sequence_loss, multi_label=config.multi_label, num_offsets=num_offsets),
+            OffsetHierarchicalAccuracy(sequence_loss=config.sequence_loss, multi_label=config.multi_label, num_offsets=num_offsets),
+            OverallHierarchicalAccuracy(sequence_loss=config.sequence_loss, multi_label=config.multi_label, num_offsets=num_offsets),
         ]
 
         # Only add prediction accuracy for multi-label since the above 3 metrics
         # are the same as the prediction accuracy for global stream
         if config.multi_label:
             metrics.extend([
-                PagePredictionHierarchicalAccuracy(sequence_loss=config.sequence_loss),
-                OffsetPredictionHierarchicalAccuracy(sequence_loss=config.sequence_loss),
-                OverallPredictionHierarchicalAccuracy(sequence_loss=config.sequence_loss),
+                PagePredictionHierarchicalAccuracy(sequence_loss=config.sequence_loss, num_offsets=num_offsets),
+                OffsetPredictionHierarchicalAccuracy(sequence_loss=config.sequence_loss, num_offsets=num_offsets),
+                OverallPredictionHierarchicalAccuracy(sequence_loss=config.sequence_loss, num_offsets=num_offsets),
             ])
 
         model.compile(

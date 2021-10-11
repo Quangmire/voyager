@@ -9,9 +9,10 @@ class HierarchicalSequenceLoss(tf.keras.losses.Loss):
     consistent output. Namely, every step has to predict the next instead of
     just looking at the final timestep
     '''
-    def __init__(self, multi_label):
+    def __init__(self, multi_label, num_offsets=64):
         super(HierarchicalSequenceLoss, self).__init__()
         self.multi_label = multi_label
+        self.num_offsets = num_offsets
 
     def call(self, y_true, y_pred):
         # y_true is passed in as a tuple
@@ -21,14 +22,14 @@ class HierarchicalSequenceLoss(tf.keras.losses.Loss):
         # Can't use sequence loss on seq2seq unfortunately, but the following is equivalent
         if self.multi_label:
             # Create one_hot representations for labels for cross_entropy
-            y_page = multi_one_hot(y_page_labels, tf.shape(y_pred)[-1] - 64)
-            y_offset = multi_one_hot(y_offset_labels, 64)
+            y_page = multi_one_hot(y_page_labels, tf.shape(y_pred)[-1] - self.num_offsets)
+            y_offset = multi_one_hot(y_offset_labels, self.num_offsets)
 
-            page_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(y_page, y_pred[:, :, :-64]))
-            offset_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(y_offset, y_pred[:, :, -64:]))
+            page_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(y_page, y_pred[:, :, :-self.num_offsets]))
+            offset_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(y_offset, y_pred[:, :, -self.num_offsets:]))
         else:
             page_loss = tfa.seq2seq.sequence_loss(
-                y_pred[:, :, :-64],
+                y_pred[:, :, :-self.num_offsets],
                 y_page_labels,
                 tf.ones((tf.shape(y_pred)[:2])),
                 average_across_timesteps=True, average_across_batch=True,
@@ -36,7 +37,7 @@ class HierarchicalSequenceLoss(tf.keras.losses.Loss):
             )
 
             offset_loss = tfa.seq2seq.sequence_loss(
-                y_pred[:, :, -64:],
+                y_pred[:, :, -self.num_offsets:],
                 y_offset_labels,
                 tf.ones((tf.shape(y_pred)[:2])),
                 average_across_timesteps=True, average_across_batch=True,
@@ -56,11 +57,12 @@ class HierarchicalCrossEntropyWithLogitsLoss(tf.keras.losses.Loss):
     '''
     Hierarchical CrossEntropy loss that Voyager was trained with in original paper
     '''
-    def __init__(self, multi_label):
+    def __init__(self, multi_label, num_offsets=64):
         super(HierarchicalCrossEntropyWithLogitsLoss, self).__init__()
         self.multi_label = multi_label
         if not self.multi_label:
             self.cross_entropy = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        self.num_offsets = num_offsets
 
     def call(self, y_true, y_pred):
         if self.multi_label:
@@ -69,14 +71,14 @@ class HierarchicalCrossEntropyWithLogitsLoss(tf.keras.losses.Loss):
             y_offset_labels = tf.squeeze(y_true[1], axis=1)
 
             # Create one-hot representation for cross_entropy
-            y_page = multi_one_hot(y_page_labels, tf.shape(y_pred)[-1] - 64)
-            y_offset = multi_one_hot(y_offset_labels, 64)
+            y_page = multi_one_hot(y_page_labels, tf.shape(y_pred)[-1] - self.num_offsets)
+            y_offset = multi_one_hot(y_offset_labels, self.num_offsets)
 
-            page_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(y_page, y_pred[:, :-64]))
-            offset_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(y_offset, y_pred[:, -64:]))
+            page_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(y_page, y_pred[:, :-self.num_offsets]))
+            offset_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(y_offset, y_pred[:, -self.num_offsets:]))
         else:
-            page_loss = self.cross_entropy(y_true[0], y_pred[:, :-64])
-            offset_loss = self.cross_entropy(y_true[1], y_pred[:, -64:])
+            page_loss = self.cross_entropy(y_true[0], y_pred[:, :-self.num_offsets])
+            offset_loss = self.cross_entropy(y_true[1], y_pred[:, -self.num_offsets:])
 
         return page_loss + offset_loss
 

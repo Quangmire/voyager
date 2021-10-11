@@ -4,3 +4,4 @@ __pycache__/
 *$py.class
 models/
 load_traces
+logs/

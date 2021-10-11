@@ -22,7 +22,7 @@ executable={exe}
 
 requirements=Cuda8 && TARGET.GPUSlot 
 request_GPUs=1
-+GPUJob=true && NumJobStarts == 0
++GPUJob=true
 
 queue
 """

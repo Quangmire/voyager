@@ -33,6 +33,7 @@ class ModelWrapper:
         self.batch_logger = None
         self.lr_decay = None
         self.tensorboard_path = None
+        self.num_offsets = (1 << config.offset_bits)
 
         # Create a model
         print('DEBUG : Creating a model with...')
@@ -46,10 +47,10 @@ class ModelWrapper:
         # The following is necessary to "compile" the metrics.
         if self.config.sequence_loss:
             y_true = tf.zeros((2, 1, 16, 1), dtype=tf.int32)
-            y_pred = tf.zeros((1, 16, self.benchmark.num_pages() + 64))
+            y_pred = tf.zeros((1, 16, self.benchmark.num_pages() + self.num_offsets))
         else:
             y_true = tf.zeros((2, 1, 1, 1), dtype=tf.int32)
-            y_pred = tf.zeros((1, self.benchmark.num_pages() + 64))
+            y_pred = tf.zeros((1, self.benchmark.num_pages() + self.num_offsets))
         self.model.compiled_metrics.update_state(y_true, y_pred)
 
         # Set up list of things to backup
@@ -311,11 +312,11 @@ class ModelWrapper:
 
                 # Grab the final (only) timestep logits
                 if self.config.sequence_loss:
-                    page_logits = logits[:, -1, :-64]
-                    offset_logits = logits[:, -1, -64:]
+                    page_logits = logits[:, -1, :-self.num_offsets]
+                    offset_logits = logits[:, -1, -self.num_offsets:]
                 else:
-                    page_logits = logits[:, :-64]
-                    offset_logits = logits[:, -64:]
+                    page_logits = logits[:, :-self.num_offsets]
+                    offset_logits = logits[:, -self.num_offsets:]
 
                 # Argmax for prediction
                 # TODO: Possibly threshold here
