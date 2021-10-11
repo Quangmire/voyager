@@ -48,8 +48,8 @@ class BenchmarkTrace:
         '''
         Reads and processes the data in the benchmark trace files
         '''
-        cur_online_epoch = 1
-        online_epoch_size = 50 * 1000 * 1000
+        cur_phase = 1
+        phase_size = 50 * 1000 * 1000
         for i, line in enumerate(f):
             # Necessary for some extraneous lines in MLPrefetchingCompetition traces
             if line.startswith('***') or line.startswith('Read'):
@@ -57,9 +57,9 @@ class BenchmarkTrace:
             inst_id, pc, addr = self.process_line(line)
             # We want 1 epoch per 50M instructions
             # TODO: Do we want to do every 50M instructions or 50M load instructions?
-            if inst_id >= cur_online_epoch * online_epoch_size:
+            if inst_id >= cur_phase * phase_size:
                 self.online_cutoffs.append(i)
-                cur_online_epoch += 1
+                cur_phase += 1
             self.process_row(i, inst_id, pc, addr)
 
     @timefunction('Generating multi-label data')
@@ -253,7 +253,7 @@ class BenchmarkTrace:
 
         return train_split, valid_split
 
-    def split(self, config, start_epoch=0, start_step=0, online=False):
+    def split(self, config, start_epoch=0, start_step=0, online=False, start_phase=0):
         '''
         Splits the trace data into train / valid / test datasets
         '''
@@ -323,15 +323,24 @@ class BenchmarkTrace:
                 self.online_cutoffs.append(len(self.data))
 
             # Stop before the last dataset since we don't need to train on it
-            for i in range(len(cutoffs) - 2):
+            for i in range(start_phase, len(cutoffs) - 2):
                 # Train on DATA[idx[i]] to DATA[idx[i + 1]]
                 # Evaluate on DATA[idx[i + 1]] to DATA[idx[i + 2]]
-                train_datasets.append(
-                    tf.data.Dataset.range(0, config.num_epochs_online * epoch_size)
-                        .map(random_closure(cutoffs[i], cutoffs[i + 1]))
-                        .map(mapper)
-                        .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
-                )
+                if i == start_phase:
+                    # Resume from where you left off
+                    train_datasets.append(
+                        tf.data.Dataset.range(start_epoch * epoch_size + start_step * config.batch_size, config.num_epochs_online * epoch_size)
+                            .map(random_closure(cutoffs[i], cutoffs[i + 1]))
+                            .map(mapper)
+                            .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+                    )
+                else:
+                    train_datasets.append(
+                        tf.data.Dataset.range(0, config.num_epochs_online * epoch_size)
+                            .map(random_closure(cutoffs[i], cutoffs[i + 1]))
+                            .map(mapper)
+                            .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+                    )
 
                 eval_datasets.append(
                     tf.data.Dataset.range(cutoffs[i + 1], cutoffs[i + 2])
@@ -345,9 +354,8 @@ class BenchmarkTrace:
         train_split, valid_split = self._split_idx(config)
 
         # Put together the datasets
-        # Needs to go to num_epochs + 1 because epochs are 1 indexed
         train_ds = (tf.data.Dataset
-            .range(start_epoch * epoch_size + start_step * config.batch_size, (config.num_epochs + 1) * config.steps_per_epoch * config.batch_size)
+            .range(start_epoch * epoch_size + start_step * config.batch_size, config.num_epochs * epoch_size)
             .map(random_closure(config.sequence_length, train_split))
             .map(mapper)
             .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)

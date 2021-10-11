@@ -17,8 +17,7 @@ def get_parser():
     parser.add_argument('--debug', action='store_true', default=False, help='Faster epochs for debugging')
     parser.add_argument('--config', default='./configs/base.yaml', help='Path to configuration file for the model')
     parser.add_argument('--print-every', type=int, default=None, help='Print updates every this number of steps. Make sure to set when outputting to a file')
-    parser.add_argument('--start-epoch', type=int, default=1, help='Resume at specified epoch')
-    parser.add_argument('--start-step', type=int, default=0, help='Resume at specified step')
+    parser.add_argument('--auto-resume', action='store_true', default=False, help='Automatically resume if checkpoint detected')
     parser.add_argument('--checkpoint-every', type=int, default=None, help='Save a resume checkpoint every this number of steps')
     parser.add_argument('--tb-dir', help='Directory to save TensorBoard logs')
 
@@ -35,7 +34,7 @@ def load_config(config_path, debug=False):
 
     # If the debug flag was raised, reduce the number of steps to have faster epochs
     if debug:
-        config.steps_per_epoch //= 4
+        config.steps_per_epoch = 2000
 
     return config
 
@@ -59,8 +58,8 @@ def timefunction(text=''):
 
 # Create the prefetch file from the given instruction IDs and addresses
 # See more at github.com/Quangmire/ChampSim
-def create_prefetch_file(prefetch_file, inst_ids, addresses):
-    with open(prefetch_file, 'w') as f:
+def create_prefetch_file(prefetch_file, inst_ids, addresses, append=False):
+    with open(prefetch_file, 'a' if append else 'w') as f:
         for inst_id, addr in zip(inst_ids, addresses):
             print(inst_id, hex(addr), file=f)
 
