@@ -62,7 +62,7 @@ def main():
             condor_file = os.path.join(base_dir, 'condor', tr, 'champsim', f'{var_name}.condor')
             script_file = os.path.join(base_dir, 'scripts', tr, 'champsim', f'{var_name}.sh')
             prefetch_file = os.path.join(base_dir, 'prefetch_traces', tr, f'{var_name}.txt')
-            results_dir = os.path.join(base_dir, 'champsim_results', tr, f'{var_name}')
+            results_dir = os.path.join(base_dir, 'champsim_results', f'{var_name}')
             
             print(f'\nFiles for {tr}, {var_name}:')
             print(f'    output log  : {log_file_base}.OUT')
