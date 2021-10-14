@@ -26,7 +26,11 @@ SH_TEMPLATE = '''#!/bin/bash
 source /u/cmolder/miniconda3/etc/profile.d/conda.sh
 conda activate tensorflow
 cd {champsim_dir}
-python3 -u {script_file} run {champsim_trace_file} --prefetch {prefetch_trace_file} --no-base --results {results_dir}
+python3 -u {script_file} run {champsim_trace_file} \\
+        --prefetch {prefetch_trace_file} --no-base  \\
+        --results {results_dir} \\
+        --num-instructions {num_instructions} \\
+        --num-prefetch-warmup-instructions {num_warmup_instructions}
 '''
 
 
@@ -93,6 +97,22 @@ def main():
             with open(condor_file, 'w') as f:
                 print(condor, file=f)
 
+            # Determine number of warmup instructions, and total instructions
+            # Spec 06/17: 500m total
+            # gap       : 300m totat,
+            # warmup    : if online, 0
+            #           : if offline, total * (train_split + valid_split)
+            #             - prefetch trace covers last testing x% (if offline).
+            num_inst   = 500 if 'spec' in tr_path else 300 # In millions
+            num_warmup = int(round(num_inst * (config.config.train_split + config.config.valid_split)))     # First (train+valid)% go to warmup.
+
+            print(f'ChampSim simulation parameters for {tr}, {var_name}:')
+            print(f'    champsim path  : {config.meta.software_dirs.champsim}')
+            print(f'    prefetch trace : {prefetch_file}')
+            print(f'    results dir    : {results_dir}')
+            print(f'    # instructions : {num_inst} million')
+            print(f'    # warmup insts : {num_warmup} million')
+
             # Build script file
             with open(script_file, 'w') as f:
                 print(SH_TEMPLATE.format(
@@ -100,7 +120,9 @@ def main():
                     script_file='ml_prefetch_sim.py',
                     champsim_trace_file=tr_path,
                     prefetch_trace_file=prefetch_file,
-                    results_dir=results_dir
+                    results_dir=results_dir,
+                    num_instructions=num_inst,
+                    num_warmup_instructions=num_warmup
                 ), file=f)
             
             # Make script executable

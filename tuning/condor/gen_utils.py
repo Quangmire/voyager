@@ -85,6 +85,14 @@ def permute_variations(config):
         if isinstance(v, list):
             permuted_vars[k] = v
 
+    # If we have no permutations, we are not tuning any variables.
+    if len(permuted_vars) == 0:
+        # Return dictionary version of config.
+        variation = {}
+        for k, v in config.config.items():
+            variation[k] = v
+        return [variation], ['default']
+
     # Generate permutations of the subset.
     keys, _ = zip(*permuted_vars.items())
     permutations = [dict(zip(keys, v)) for v in itertools.product(*permuted_vars.values())]
