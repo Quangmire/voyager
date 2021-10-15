@@ -9,6 +9,7 @@ meta:
     use_gpu: true
     print_every: 100
     checkpoint_every: 10000
+    champsim_print_every: 1 # million instructions 
 traces: ["spec17/605.mcf-s0.txt.xz"]
 config: # If an array, it generates permutations of the values. Otherwise, it keeps them constant.
     name: "Base Voyager"

@@ -30,7 +30,8 @@ python3 -u {script_file} run {champsim_trace_file} \\
         --prefetch {prefetch_trace_file} --no-base  \\
         --results {results_dir} \\
         --num-instructions {num_instructions} \\
-        --num-prefetch-warmup-instructions {num_warmup_instructions}
+        --num-prefetch-warmup-instructions {num_warmup_instructions} \\
+        --stat-printing-period {stat_printing_period}
 '''
 
 
@@ -105,6 +106,7 @@ def main():
             #             - prefetch trace covers last testing x% (if offline).
             num_inst   = 500 if 'spec' in tr_path else 300 # In millions
             num_warmup = int(round(num_inst * (config.config.train_split + config.config.valid_split)))     # First (train+valid)% go to warmup.
+            stat_interval = config.meta.champsim_print_every
 
             print(f'ChampSim simulation parameters for {tr}, {var_name}:')
             print(f'    champsim path  : {config.meta.software_dirs.champsim}')
@@ -112,6 +114,7 @@ def main():
             print(f'    results dir    : {results_dir}')
             print(f'    # instructions : {num_inst} million')
             print(f'    # warmup insts : {num_warmup} million')
+            print(f'    stat intervals : {stat_interval} million')
 
             # Build script file
             with open(script_file, 'w') as f:
@@ -122,7 +125,8 @@ def main():
                     prefetch_trace_file=prefetch_file,
                     results_dir=results_dir,
                     num_instructions=num_inst,
-                    num_warmup_instructions=num_warmup
+                    num_warmup_instructions=num_warmup,
+                    stat_printing_period=stat_interval
                 ), file=f)
             
             # Make script executable
