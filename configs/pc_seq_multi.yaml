@@ -16,6 +16,7 @@ use_current_pc: True    # Feed in PC of current load instead of previous load at
 pc_localization: False  # Train on PC localized stream instead of global stream
 sequence_length: 16
 offset_bits: 6
+prediction_depth: 0
 # LSTM Parameters
 pc_embed_size: 64
 page_embed_size: 128

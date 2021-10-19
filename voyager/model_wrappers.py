@@ -10,7 +10,7 @@ import tensorflow as tf
 from voyager.callbacks import NBatchLogger, ReduceLROnPlateauWithConfig, ResumeCheckpoint
 from voyager.data_loader import read_benchmark_trace
 from voyager.losses import HierarchicalSequenceLoss, HierarchicalCrossEntropyWithLogitsLoss
-from voyager.models import HierarchicalLSTM
+from voyager.models import get_model
 from voyager.utils import load_config, create_prefetch_file, timefunction
 
 
@@ -20,7 +20,7 @@ class ModelWrapper:
     VERBOSITY_PROGBAR = 1
     VERBOSITY_EPOCH   = 2
 
-    def __init__(self, config, benchmark, verbosity=1):
+    def __init__(self, config, benchmark, model_name, verbosity=1):
         self.config = config
         self.benchmark = benchmark
         self.verbosity = verbosity
@@ -39,7 +39,7 @@ class ModelWrapper:
         print('DEBUG : Creating a model with...')
         print('    pc vocab size   :', benchmark.num_pcs())
         print('    page vocab size :', benchmark.num_pages())
-        self.model = HierarchicalLSTM.compile_model(config, benchmark.num_pcs(), benchmark.num_pages())
+        self.model = get_model(model_name).compile_model(config, benchmark.num_pcs(), benchmark.num_pages())
         self._compile_metrics()
         self.backups['optim'] = self.model.optimizer
 
@@ -462,7 +462,7 @@ class ModelWrapper:
         benchmark = read_benchmark_trace(args.benchmark, config.multi_label, config.offset_bits)
 
         # Create and compile the model
-        model_wrapper = ModelWrapper(config, benchmark, verbosity=1 if args.print_every is None else 2)
+        model_wrapper = ModelWrapper(config, benchmark, args.model_name, verbosity=1 if args.print_every is None else 2)
 
         if args.auto_resume:
             model_wrapper.restore_checkpoint(args.model_path)

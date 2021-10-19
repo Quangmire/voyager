@@ -20,6 +20,7 @@ def get_parser():
     parser.add_argument('--auto-resume', action='store_true', default=False, help='Automatically resume if checkpoint detected')
     parser.add_argument('--checkpoint-every', type=int, default=None, help='Save a resume checkpoint every this number of steps')
     parser.add_argument('--tb-dir', help='Directory to save TensorBoard logs')
+    parser.add_argument('--model-name', default='voyager')
 
     return parser
 

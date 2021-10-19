@@ -270,9 +270,10 @@ class BenchmarkTrace:
             page_target = y[:, 0, :], offset_target = y[:, 1, :]
             where the third axis / dimension is the time dimension
             '''
-            start, end = idx - config.sequence_length, idx
+            start, end = idx - config.sequence_length - config.prediction_depth, idx - config.prediction_depth
+            pred_start, pred_end = idx - config.sequence_length, idx
 
-            inst_ids = self.data[end - 1, 0]
+            inst_id = self.data[end - 1, 0]
 
             page_hist = self.data[start:end, 2]
             offset_hist = self.data[start:end, 3]
@@ -287,20 +288,20 @@ class BenchmarkTrace:
             # Global stream only can work directly with the data tensor
             if self.multi_label:
                 if config.sequence_loss:
-                    y_page = self.pages[start + 1:end + 1]
-                    y_offset = self.offsets[start + 1:end + 1]
+                    y_page = self.pages[pred_start + 1:pred_end + 1]
+                    y_offset = self.offsets[pred_start + 1:pred_end + 1]
                 else:
-                    y_page = self.pages[end:end + 1]
-                    y_offset = self.offsets[end:end + 1]
+                    y_page = self.pages[pred_end:pred_end + 1]
+                    y_offset = self.offsets[pred_end:pred_end + 1]
             else:
                 if config.sequence_loss:
-                    y_page = self.data[start + 1:end + 1, 2]
-                    y_offset = self.data[start + 1:end + 1, 3]
+                    y_page = self.data[pred_start + 1:pred_end + 1, 2]
+                    y_offset = self.data[pred_start + 1:pred_end + 1, 3]
                 else:
-                    y_page = self.data[end:end + 1, 2]
-                    y_offset = self.data[end:end + 1, 3]
+                    y_page = self.data[pred_end:pred_end + 1, 2]
+                    y_offset = self.data[pred_end:pred_end + 1, 3]
 
-            return inst_ids, tf.concat([pc_hist, page_hist, offset_hist], axis=-1), y_page, y_offset
+            return inst_id, tf.concat([pc_hist, page_hist, offset_hist], axis=-1), y_page, y_offset
 
         # Closure for generating a reproducible random sequence
         epoch_size = config.steps_per_epoch * config.batch_size
@@ -316,7 +317,7 @@ class BenchmarkTrace:
             train_datasets = []
             eval_datasets = []
             # Exclude the first N values since they cannot fully be an input for Voyager
-            cutoffs = [config.sequence_length] + self.online_cutoffs
+            cutoffs = [config.sequence_length + config.prediction_depth] + self.online_cutoffs
 
             # Include the rest of the data if it wasn't on a 50M boundary
             if self.online_cutoffs[-1] < len(self.data):
@@ -356,7 +357,7 @@ class BenchmarkTrace:
         # Put together the datasets
         train_ds = (tf.data.Dataset
             .range(start_epoch * epoch_size + start_step * config.batch_size, config.num_epochs * epoch_size)
-            .map(random_closure(config.sequence_length, train_split))
+            .map(random_closure(config.sequence_length + config.prediction_depth, train_split))
             .map(mapper)
             .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
         )
