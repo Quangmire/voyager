@@ -33,6 +33,18 @@ def load_config(config_path, debug=False):
     with open(config_path, 'r') as f:
         config = attrdict.AttrDict(yaml.safe_load(f))
 
+    if not config.global_stream and not config.pc_localized:
+        print('Invalid config file. Either or both "global_stream" and "pc_localized" must be true')
+        exit()
+
+    if config.global_output and config.pc_localized:
+        print('Invalid config file. "global_output" and "pc_localized" cannot both be true')
+        exit()
+
+    if not config.global_output and not config.pc_localized:
+        print('Invalid config file. "global_output" and "pc_localized" cannot both be false')
+        exit()
+
     # If the debug flag was raised, reduce the number of steps to have faster epochs
     if debug:
         config.steps_per_epoch = 2000

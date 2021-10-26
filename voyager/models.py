@@ -37,6 +37,7 @@ class Voyager(tf.keras.Model):
         self.step = 0
         self.epoch = 1
 
+        self.config = config
         # Model params
         self.offset_size = (1 << config.offset_bits)
         self.pc_embed_size = config.pc_embed_size
@@ -135,9 +136,8 @@ class Voyager(tf.keras.Model):
 
         return page_embed, offset_embed
 
-    def lstm_output(self, pc_embed, page_embed, offset_embed, training=False):
+    def lstm_output(self, lstm_inputs, training=False):
         # Run through LSTM
-        lstm_inputs = tf.concat([pc_embed, page_embed, offset_embed], 2)
         # Manual embedding dropout to have reproducible dropout randomness
         lstm_inputs = Stateless.dropout_input(lstm_inputs, self.dropout, seed=(self.epoch, self.step), training=training)
         coarse_out = self.coarse_layers(lstm_inputs, training=training)
@@ -166,7 +166,21 @@ class Voyager(tf.keras.Model):
         pc_embed = self.pc_embedding(pcs)
         page_embed, offset_embed = self.address_embed(pages, offsets)
 
-        lstm_output = self.lstm_output(pc_embed, page_embed, offset_embed, training)
+        if self.config.pc_localized and self.config.global_stream:
+            pc_localized_pcs = inputs[:, 3 * self.sequence_length:4 * self.sequence_length]
+            pc_localized_pages = inputs[:, 4 * self.sequence_length:5 * self.sequence_length]
+            pc_localized_offsets = inputs[:, 5 * self.sequence_length:6 * self.sequence_length]
+
+            # Compute embeddings
+            pc_localized_pc_embed = self.pc_embedding(pc_localized_pcs)
+            pc_localized_page_embed, pc_localized_offset_embed = self.address_embed(pc_localized_pages, pc_localized_offsets)
+
+            lstm_inputs = tf.concat([pc_embed, page_embed, offset_embed,
+                pc_localized_pc_embed, pc_localized_page_embed, pc_localized_offset_embed], 2)
+        else:
+            lstm_inputs = tf.concat([pc_embed, page_embed, offset_embed], 2)
+
+        lstm_output = self.lstm_output(lstm_inputs, training)
 
         return self.linear(lstm_output)
 
@@ -263,9 +277,8 @@ class OffsetLSTM(Voyager):
         self.page_linear = tf.keras.layers.Dense(self.page_vocab_size, input_shape=(self.lstm_size,), activation=None, kernel_regularizer='l1')
         self.offset_linear = tf.keras.layers.Dense(self.offset_size, input_shape=(self.lstm_size + self.page_embed_size,), activation=None, kernel_regularizer='l1')
 
-    def lstm_output(self, pc_embed, page_embed, offset_embed, training=False):
+    def lstm_output(self, lstm_inputs, training=False):
         # Run through LSTM
-        lstm_inputs = tf.concat([pc_embed, page_embed, offset_embed], 2)
         # Manual embedding dropout to have reproducible dropout randomness
         lstm_inputs = Stateless.dropout_input(lstm_inputs, self.dropout, seed=(self.epoch, self.step), training=training)
         coarse_out = self.coarse_layers(lstm_inputs, training=training)

@@ -9,16 +9,16 @@ class BenchmarkTrace:
     Benchmark trace parsing class
     '''
 
-    def __init__(self, multi_label=False, offset_bits=6):
+    def __init__(self, config):
+        self.config = config
         self.pc_mapping = {'oov': 0}
         self.page_mapping = {'oov': 0}
         self.reverse_page_mapping = {}
-        self.data = []
+        self.data = [[0, 0, 0, 0, 0]]
+        self.pc_data = [[]]
         self.online_cutoffs = []
         # Boolean value indicating whether or not to use the multiple labeling scheme
-        self.multi_label = multi_label
-        self.offset_bits = offset_bits
-        self.offset_mask = (1 << offset_bits) - 1
+        self.offset_mask = (1 << config.offset_bits) - 1
         # Stores pc localized streams
         self.pc_addrs = {}
         self.pc_addrs_idx = {}
@@ -31,7 +31,7 @@ class BenchmarkTrace:
     def read_and_process_file(self, f):
         self._read_file(f)
         self.reverse_page_mapping = {v: k for k, v in self.page_mapping.items()}
-        if self.multi_label:
+        if self.config.multi_label:
             self._generate_multi_label()
             # Needs to be regenerated to include deltas
             self.reverse_page_mapping = {v: k for k, v in self.page_mapping.items()}
@@ -40,9 +40,10 @@ class BenchmarkTrace:
     @timefunction('Tensoring data')
     def _tensor(self):
         self.data = tf.convert_to_tensor(self.data)
-        if self.multi_label:
+        if self.config.multi_label:
             self.pages = tf.convert_to_tensor(self.pages)
             self.offsets = tf.convert_to_tensor(self.offsets)
+        self.pc_data = tf.ragged.constant(self.pc_data)
 
     @timefunction('Reading in data')
     def _read_file(self, f):
@@ -66,7 +67,9 @@ class BenchmarkTrace:
     @timefunction('Generating multi-label data')
     def _generate_multi_label(self):
         # Previous address for delta localization
-        prev_addr = None
+        prev_addr = {}
+        if self.config.global_output:
+            prev_addr['global'] = None
         self.pages = []
         self.offsets = []
         # 1 Global + 1 Delta + 1 PC + 1 Spatial + up to 10 Co-occurrence
@@ -76,7 +79,7 @@ class BenchmarkTrace:
             offsets = []
 
             # Cache line of next load
-            cur_addr = (self.reverse_page_mapping[mapped_page] << self.offset_bits) + offset
+            cur_addr = (self.reverse_page_mapping[mapped_page] << self.config.offset_bits) + offset
 
             # DELTAS FOR INFREQUENT ADDRESSES
             if self.count[(mapped_page, offset)] <= 2:
@@ -84,18 +87,21 @@ class BenchmarkTrace:
                 mapped_pages.append(-1)
                 offsets.append(-1)
                 # Only do delta if we're not the first memory address
-                if prev_addr is not None:
-                    dist = cur_addr - prev_addr
+                if (self.config.pc_localized and mapped_pc in prev_addr) or (self.config.global_stream and prev_addr['global'] is not None):
+                    if self.config.pc_localized:
+                        dist = cur_addr - prev_addr[mapped_pc]
+                    else:
+                        dist = cur_addr - prev_addr['global']
                     # Only do deltas for pages within 256 pages, which as of right now
                     # experimentally looks like it gives good coverage without unnecessarily
                     # blowing up the vocabulary size
-                    if 0 <= (abs(dist) >> self.offset_bits) <= 256:
+                    if 0 <= (abs(dist) >> self.config.offset_bits) <= 256:
                         dist_page = None
                         dist_offset = abs(dist) & self.offset_mask
                         if dist > 0:
-                            dist_page = '+' + str(abs(dist) >> self.offset_bits)
+                            dist_page = '+' + str(abs(dist) >> self.config.offset_bits)
                         elif dist < 0:
-                            dist_page = '-' + str(abs(dist) >> self.offset_bits)
+                            dist_page = '-' + str(abs(dist) >> self.config.offset_bits)
 
                         # We don't care about when the next address was the previous one
                         if dist_page is not None:
@@ -121,22 +127,26 @@ class BenchmarkTrace:
                 mapped_pages.append(-1)
                 offsets.append(-1)
 
-            # PC LOCALIZATION
-            if self.pc_addrs_idx[mapped_pc] < len(self.pc_addrs[mapped_pc]) - 1:
-                self.pc_addrs_idx[mapped_pc] += 1
-                pc_page, pc_offset = self.pc_addrs[mapped_pc][self.pc_addrs_idx[mapped_pc]]
-                mapped_pages.append(pc_page)
-                offsets.append(pc_offset)
-            # Want to associate third spot with pc localization
-            else:
+            if not self.config.global_output:
                 mapped_pages.append(-1)
                 offsets.append(-1)
+            else:
+                # PC LOCALIZATION
+                if self.pc_addrs_idx[mapped_pc] < len(self.pc_addrs[mapped_pc]) - 1:
+                    self.pc_addrs_idx[mapped_pc] += 1
+                    pc_page, pc_offset = self.pc_addrs[mapped_pc][self.pc_addrs_idx[mapped_pc]]
+                    mapped_pages.append(pc_page)
+                    offsets.append(pc_offset)
+                # Want to associate third spot with pc localization
+                else:
+                    mapped_pages.append(-1)
+                    offsets.append(-1)
 
             # SPATIAL LOCALIZATION
             # TODO: Possibly need to examine this default distance value to make sure that it
             #       isn't too small (or large) for accessing the max temporal distance
             for (_, _, spatial_page, spatial_offset) in self.data[i:i + 10]:
-                if 0 < (1 << self.offset_bits) * (spatial_page - mapped_page) + (spatial_offset - offset) < 257:
+                if 0 < (1 << self.config.offset_bits) * (spatial_page - mapped_page) + (spatial_offset - offset) < 257:
                     mapped_pages.append(spatial_page)
                     offsets.append(spatial_offset)
                     break
@@ -173,7 +183,10 @@ class BenchmarkTrace:
                         offsets.append(co_offset)
 
             # Save for delta
-            prev_addr = cur_addr
+            if self.config.pc_localized:
+                prev_addr[mapped_pc] = cur_addr
+            else:
+                prev_addr['global'] = cur_addr
 
             # Working with rectangular tensors is infinitely more painless than
             # Tensorflow's ragged tensors that have a bunch of unsupported ops
@@ -200,13 +213,14 @@ class BenchmarkTrace:
         TODO: Handle the pc localization
         '''
         cache_line = addr >> 6
-        page, offset = cache_line >> self.offset_bits, cache_line & self.offset_mask
+        page, offset = cache_line >> self.config.offset_bits, cache_line & self.offset_mask
 
         if pc not in self.pc_mapping:
             self.pc_mapping[pc] = len(self.pc_mapping)
             # These are needed for PC localization
             self.pc_addrs[self.pc_mapping[pc]] = []
             self.pc_addrs_idx[self.pc_mapping[pc]] = 0
+            self.pc_data.append([0 for _ in range(self.config.sequence_length + self.config.prediction_depth)])
 
         if page not in self.page_mapping:
             self.page_mapping[page] = len(self.page_mapping)
@@ -227,7 +241,8 @@ class BenchmarkTrace:
         # Include the instruction ID for generating the prefetch file for running
         # in the ML-DPC modified version of ChampSim.
         # See github.com/Quangmire/ChampSim
-        self.data.append([inst_id, self.pc_mapping[pc], self.page_mapping[page], offset])
+        self.data.append([inst_id, self.pc_mapping[pc], self.page_mapping[page], offset, len(self.pc_data[self.pc_mapping[pc]])])
+        self.pc_data[self.pc_mapping[pc]].append(len(self.data) - 1)
 
     def process_line(self, line):
         # File format for ML Prefetching Competition
@@ -245,15 +260,15 @@ class BenchmarkTrace:
     def num_pages(self):
         return len(self.page_mapping)
 
-    def _split_idx(self, config):
+    def _split_idx(self):
         # Computing end of train and validation splits
-        train_split = int(config.train_split * (len(self.data) - config.sequence_length)) + config.sequence_length
-        valid_split = int((config.train_split + config.valid_split) * (len(self.data) - config.sequence_length)) + config.sequence_length
+        train_split = int(self.config.train_split * (len(self.data) - self.config.sequence_length)) + self.config.sequence_length
+        valid_split = int((self.config.train_split + self.config.valid_split) * (len(self.data) - self.config.sequence_length)) + self.config.sequence_length
         print('TEST INST ID STARTS AROUND ~', self.data[valid_split, 0])
 
         return train_split, valid_split
 
-    def split(self, config, start_epoch=0, start_step=0, online=False, start_phase=0):
+    def split(self, start_epoch=0, start_step=0, online=False, start_phase=0):
         '''
         Splits the trace data into train / valid / test datasets
         '''
@@ -270,41 +285,83 @@ class BenchmarkTrace:
             page_target = y[:, 0, :], offset_target = y[:, 1, :]
             where the third axis / dimension is the time dimension
             '''
-            start, end = idx - config.sequence_length - config.prediction_depth, idx - config.prediction_depth
-            pred_start, pred_end = idx - config.sequence_length, idx
+            hists = []
+
+            # Global Stream Input and Output
+            start, end = idx - self.config.sequence_length - self.config.prediction_depth, idx - self.config.prediction_depth
+            pred_start, pred_end = idx - self.config.sequence_length, idx
 
             inst_id = self.data[end - 1, 0]
 
-            page_hist = self.data[start:end, 2]
-            offset_hist = self.data[start:end, 3]
-
-            # Slide the pc_hist to the left by 1 if using current PC
-            if config.use_current_pc:
-                pc_hist = self.data[start + 1:end + 1, 1]
-            else:
-                pc_hist = self.data[start:end, 1]
-
-            # Multi-label draws from the pages + offsets tensors while
-            # Global stream only can work directly with the data tensor
-            if self.multi_label:
-                if config.sequence_loss:
-                    y_page = self.pages[pred_start + 1:pred_end + 1]
-                    y_offset = self.offsets[pred_start + 1:pred_end + 1]
+            if self.config.global_stream:
+                # Slide the pc_hist to the left by 1 if using current PC
+                if self.config.use_current_pc:
+                    pc_hist = self.data[start + 1:end + 1, 1]
                 else:
-                    y_page = self.pages[pred_end:pred_end + 1]
-                    y_offset = self.offsets[pred_end:pred_end + 1]
-            else:
-                if config.sequence_loss:
-                    y_page = self.data[pred_start + 1:pred_end + 1, 2]
-                    y_offset = self.data[pred_start + 1:pred_end + 1, 3]
-                else:
-                    y_page = self.data[pred_end:pred_end + 1, 2]
-                    y_offset = self.data[pred_end:pred_end + 1, 3]
+                    pc_hist = self.data[start:end, 1]
+                page_hist = self.data[start:end, 2]
+                offset_hist = self.data[start:end, 3]
+                hists.append(pc_hist)
+                hists.append(page_hist)
+                hists.append(offset_hist)
 
-            return inst_id, tf.concat([pc_hist, page_hist, offset_hist], axis=-1), y_page, y_offset
+            if self.config.global_output:
+                # Multi-label draws from the pages + offsets tensors while
+                # Global stream only can work directly with the data tensor
+                if self.config.multi_label:
+                    if self.config.sequence_loss:
+                        y_page = self.pages[pred_start + 1:pred_end + 1]
+                        y_offset = self.offsets[pred_start + 1:pred_end + 1]
+                    else:
+                        y_page = self.pages[pred_end:pred_end + 1]
+                        y_offset = self.offsets[pred_end:pred_end + 1]
+                else:
+                    if self.config.sequence_loss:
+                        y_page = self.data[pred_start + 1:pred_end + 1, 2]
+                        y_offset = self.data[pred_start + 1:pred_end + 1, 3]
+                    else:
+                        y_page = self.data[pred_end:pred_end + 1, 2]
+                        y_offset = self.data[pred_end:pred_end + 1, 3]
+
+            # PC Localized Input and Output
+            cur_pc = self.data[idx, 1]
+            end = self.data[idx, 4]
+            start = end - self.config.sequence_length - self.config.prediction_depth
+
+            if self.config.pc_localized:
+                hist = tf.gather(self.data, self.pc_data[cur_pc, start:end + 1])
+                page_hist = hist[:self.config.sequence_length, 2]
+                offset_hist = hist[:self.config.sequence_length, 3]
+                if self.config.use_current_pc:
+                    pc_hist = hist[1:self.config.sequence_length + 1, 1]
+                else:
+                    pc_hist = hist[:self.config.sequence_length, 1]
+                hists.append(pc_hist)
+                hists.append(page_hist)
+                hists.append(offset_hist)
+
+            if not self.config.global_output:
+                if self.config.multi_label:
+                    page_hist = tf.gather(self.pages, self.pc_data[cur_pc, start:end + 1])
+                    offset_hist = tf.gather(self.offsets, self.pc_data[cur_pc, start:end + 1])
+                    if self.config.sequence_loss:
+                        y_page = page_hist[1 + self.config.prediction_depth:, 2]
+                        y_offset = offset_hist[1 + self.config.prediction_depth:, 3]
+                    else:
+                        y_page = page_hist[-1:, 2]
+                        y_offset = offset_hist[-1:, 3]
+                else:
+                    if self.config.sequence_loss:
+                        y_page = hist[1 + self.config.prediction_depth:, 2]
+                        y_offset = hist[1 + self.config.prediction_depth:, 3]
+                    else:
+                        y_page = hist[-1:, 2]
+                        y_offset = hist[-1:, 3]
+
+            return inst_id, tf.concat(hists, axis=-1), y_page, y_offset
 
         # Closure for generating a reproducible random sequence
-        epoch_size = config.steps_per_epoch * config.batch_size
+        epoch_size = self.config.steps_per_epoch * self.config.batch_size
         def random_closure(minval, maxval):
             def random(x):
                 epoch = x // epoch_size
@@ -317,7 +374,7 @@ class BenchmarkTrace:
             train_datasets = []
             eval_datasets = []
             # Exclude the first N values since they cannot fully be an input for Voyager
-            cutoffs = [config.sequence_length + config.prediction_depth] + self.online_cutoffs
+            cutoffs = [self.config.sequence_length + self.config.prediction_depth] + self.online_cutoffs
 
             # Include the rest of the data if it wasn't on a 50M boundary
             if self.online_cutoffs[-1] < len(self.data):
@@ -330,46 +387,46 @@ class BenchmarkTrace:
                 if i == start_phase:
                     # Resume from where you left off
                     train_datasets.append(
-                        tf.data.Dataset.range(start_epoch * epoch_size + start_step * config.batch_size, config.num_epochs_online * epoch_size)
+                        tf.data.Dataset.range(start_epoch * epoch_size + start_step * self.config.batch_size, self.config.num_epochs_online * epoch_size)
                             .map(random_closure(cutoffs[i], cutoffs[i + 1]))
                             .map(mapper)
-                            .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+                            .batch(self.config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
                     )
                 else:
                     train_datasets.append(
-                        tf.data.Dataset.range(0, config.num_epochs_online * epoch_size)
+                        tf.data.Dataset.range(0, self.config.num_epochs_online * epoch_size)
                             .map(random_closure(cutoffs[i], cutoffs[i + 1]))
                             .map(mapper)
-                            .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+                            .batch(self.config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
                     )
 
                 eval_datasets.append(
                     tf.data.Dataset.range(cutoffs[i + 1], cutoffs[i + 2])
                         .map(mapper)
-                        .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+                        .batch(self.config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
                 )
 
             return train_datasets, eval_datasets
 
         # Regular 80-10-10 decomposition
-        train_split, valid_split = self._split_idx(config)
+        train_split, valid_split = self._split_idx()
 
         # Put together the datasets
         train_ds = (tf.data.Dataset
-            .range(start_epoch * epoch_size + start_step * config.batch_size, config.num_epochs * epoch_size)
-            .map(random_closure(config.sequence_length + config.prediction_depth, train_split))
+            .range(start_epoch * epoch_size + start_step * self.config.batch_size, self.config.num_epochs * epoch_size)
+            .map(random_closure(self.config.sequence_length + self.config.prediction_depth, train_split))
             .map(mapper)
-            .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
+            .batch(self.config.batch_size, num_parallel_calls=tf.data.AUTOTUNE, deterministic=True)
         )
 
         valid_ds = (tf.data.Dataset.range(train_split, valid_split)
             .map(mapper)
-            .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+            .batch(self.config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
         )
 
         test_ds = (tf.data.Dataset.range(valid_split, len(self.data))
             .map(mapper)
-            .batch(config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
+            .batch(self.config.batch_size, num_parallel_calls=tf.data.AUTOTUNE)
         )
 
         return train_ds, valid_ds, test_ds
@@ -383,22 +440,22 @@ class BenchmarkTrace:
             prev_page = x[2 * sequence_length - 1]
             prev_offset = x[-1]
             unmapped_prev_page = self.reverse_page_mapping[prev_page]
-            prev_addr = (unmapped_prev_page << self.offset_bits) + prev_offset
+            prev_addr = (unmapped_prev_page << self.config.offset_bits) + prev_offset
             delta = int(unmapped_page[1:])
             if unmapped_page[0] == '+':
                 ret_addr = prev_addr + delta
             else:
                 ret_addr = prev_addr - delta
         else:
-            ret_addr = (unmapped_page << self.offset_bits) + offset
+            ret_addr = (unmapped_page << self.config.offset_bits) + offset
 
         return ret_addr << 6
 
-def read_benchmark_trace(benchmark_path, multi_label, offset_bits):
+def read_benchmark_trace(benchmark_path, config):
     '''
     Reads and processes the trace for a benchmark
     '''
-    benchmark = BenchmarkTrace(multi_label, offset_bits)
+    benchmark = BenchmarkTrace(config)
 
     if benchmark_path.endswith('.txt'):
         with open(benchmark_path, 'r') as f:

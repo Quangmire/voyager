@@ -159,7 +159,7 @@ class ModelWrapper:
     def train(self, train_ds=None, valid_ds=None, callbacks=None):
         # Create default datasets if there are None
         if train_ds is None:
-            train_ds, valid_ds, test_ds = self.benchmark.split(self.config, self.epoch, self.step)
+            train_ds, valid_ds, test_ds = self.benchmark.split(self.epoch, self.step)
 
         # Create callbacks list anew
         self._init_callbacks(callbacks if callbacks is not None else [])
@@ -207,7 +207,7 @@ class ModelWrapper:
 
     def train_online(self, prefetch_file=None, callbacks=None):
         # Create datasets
-        train_datasets, eval_datasets = self.benchmark.split(self.config, self.epoch % self.config.num_epochs_online, self.step, online=True, start_phase=self.phase)
+        train_datasets, eval_datasets = self.benchmark.split(self.epoch % self.config.num_epochs_online, self.step, online=True, start_phase=self.phase)
         # Change # of epochs to # of online epochs
         orig_num_epochs = self.config.num_epochs
         self.config.num_epochs = (self.phase + 1) * self.config.num_epochs_online
@@ -259,7 +259,7 @@ class ModelWrapper:
     def evaluate(self, datasets=None, callbacks=None):
         # Setup default datasets if there are None
         if datasets is None:
-            train_ds, valid_ds, test_ds = self.benchmark.split(self.config, self.epoch, self.step)
+            train_ds, valid_ds, test_ds = self.benchmark.split(self.epoch, self.step)
             datasets = [test_ds]
 
         # Create callbacks list anew
@@ -295,7 +295,7 @@ class ModelWrapper:
     def generate(self, datasets=None, prefetch_file=None, callbacks=None):
         # Create default datasets if there are none
         if datasets is None:
-            train_ds, valid_ds, test_ds = self.benchmark.split(self.config, self.epoch, self.step)
+            train_ds, valid_ds, test_ds = self.benchmark.split(self.epoch, self.step)
             datasets = [test_ds]
 
         # Create callbacks list anew
@@ -349,7 +349,7 @@ class ModelWrapper:
 
     def get_datasets(self, train, valid, test):
         datasets = []
-        train_ds, valid_ds, test_ds = self.benchmark.split(self.config, self.epoch, self.step)
+        train_ds, valid_ds, test_ds = self.benchmark.split(self.epoch, self.step)
         if train:
             datasets.append(train_ds)
         if valid:
@@ -459,7 +459,7 @@ class ModelWrapper:
         print(config)
 
         # Load and process benchmark
-        benchmark = read_benchmark_trace(args.benchmark, config.multi_label, config.offset_bits)
+        benchmark = read_benchmark_trace(args.benchmark, config)
 
         # Create and compile the model
         model_wrapper = ModelWrapper(config, benchmark, args.model_name, verbosity=1 if args.print_every is None else 2)
