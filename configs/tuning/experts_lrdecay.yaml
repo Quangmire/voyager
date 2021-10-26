@@ -4,7 +4,7 @@ meta:
         champsim: "/u/cmolder/GitHub/ChampSim/"
     trace_dirs:
         load: "/scratch/cluster/qduong/ML-DPC/data/load_traces/"
-        champsim: "/scratch/cluster/cmolder/ML-DPC/data/champsim_traces/"
+        champsim: "/scratch/cluster/cmolder/ML-DPC/ChampSimTraces/"
     sweep_dir: "/scratch/cluster/cmolder/voyager_hypertuning/experts_lrdecay/"
     use_gpu: true
     print_every: 100

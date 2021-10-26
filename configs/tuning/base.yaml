@@ -8,8 +8,8 @@ meta:
         champsim: "/u/cmolder/GitHub/ChampSim/"
     trace_dirs:
         load: "/scratch/cluster/qduong/ML-DPC/data/load_traces/"
-        champsim: "/scratch/cluster/cmolder/ML-DPC/ChampSimTraces/"
-    sweep_dir: "/scratch/cluster/cmolder/voyager_hypertuning/tuned/"
+        champsim: "/scratch/cluster/cmolder/ML-DPC/data/champsim_traces/"
+    sweep_dir: "/scratch/cluster/cmolder/voyager_hypertuning/base/"
     use_gpu: true
     print_every: 100
     checkpoint_every: 10000
@@ -37,7 +37,7 @@ traces: [
 config: # If an array, it generates permutations of the values. Otherwise, it keeps them constant.
     name: "Base Voyager"
     # Training Parameters
-    batch_size: 512
+    batch_size: 64
     learning_rate: 0.001
     learning_rate_decay: 2
     min_learning_rate: 0.0001
