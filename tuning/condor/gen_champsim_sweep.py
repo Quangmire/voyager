@@ -59,7 +59,7 @@ def main():
     for tr_path in trace_paths:
         # Splice .txt from file name
         tr_path = tr_path.replace('.txt', '.trace')
-        tr = tr_path.split('/')[-1].split('.')[1]
+        tr = tr_path.split('/')[-1].rstrip('.xz').rstrip('.gz').rstrip('.bz')
         for var, var_name in zip(variations, variation_names):
             # Setup initial output directories/files per experiment
             log_file_base = os.path.join(base_dir, 'logs', tr, 'champsim', var_name)

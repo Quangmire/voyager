@@ -53,12 +53,14 @@ def get_baseline_parser():
     parser.add_argument(
         '--warmup-pct',
         help='Percentage of the trace to warmup instructions in percent (default 90)',
-        default=90
+        default=90,
+        type=int
     )
     parser.add_argument(
         '--n-heartbeat',
         help='Heartbeat interval, in millions of instructions in millions (default 1m)',
-        default=1
+        default=1,
+        type=int
     )
     return parser
 
@@ -69,7 +71,7 @@ def main():
     print(args)
 
     trace_path_dir = args.champsim_trace_dir
-    trace_paths = glob.glob(os.path.join(trace_path_dir, '*/*.xz'))
+    trace_paths = glob.glob(os.path.join(trace_path_dir, '*/*.[xgb]z')) # all .gz, .xz, or .bz files in a subdir (i.e. spec06/)
     print('Generating configurations for these traces:', trace_paths)
 
     # Track condor files generated so they can be batch launched later 
@@ -81,7 +83,7 @@ def main():
     for tr_path in trace_paths:
         # Splice .txt from file name
         tr_path = tr_path.replace('.txt', '.trace')
-        tr = tr_path.split('/')[-1].rstrip('.xz')
+        tr = tr_path.split('/')[-1].rstrip('.xz').rstrip('.gz').rstrip('.bz')
         print(tr)
 
         # Setup initial output directories/files per experiment
