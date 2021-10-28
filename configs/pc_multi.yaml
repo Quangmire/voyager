@@ -13,9 +13,11 @@ multi_label: True
 # Input Parameters
 sequence_loss: False    # Train with sequence loss instead of cross entropy on last timestep
 use_current_pc: True    # Feed in PC of current load instead of previous load at each timestep
-pc_localization: False  # Train on PC localized stream instead of global stream
 sequence_length: 16
 offset_bits: 6
+prediction_depth: 0
+global_stream: False
+pc_localized: True
 # LSTM Parameters
 pc_embed_size: 64
 page_embed_size: 128
@@ -23,3 +25,5 @@ num_experts: 100
 lstm_size: 256
 lstm_dropout: 0.8
 lstm_layers: 1
+# Output Parameters
+global_output: False # By default, models predict the pc localized output

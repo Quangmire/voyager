@@ -20,6 +20,7 @@ def get_parser():
     parser.add_argument('--auto-resume', action='store_true', default=False, help='Automatically resume if checkpoint detected')
     parser.add_argument('--checkpoint-every', type=int, default=None, help='Save a resume checkpoint every this number of steps')
     parser.add_argument('--tb-dir', help='Directory to save TensorBoard logs')
+    parser.add_argument('--model-name', default='voyager')
 
     return parser
 
@@ -31,6 +32,18 @@ def load_config(config_path, debug=False):
     # Parse config file
     with open(config_path, 'r') as f:
         config = attrdict.AttrDict(yaml.safe_load(f))
+
+    if not config.global_stream and not config.pc_localized:
+        print('Invalid config file. Either or both "global_stream" and "pc_localized" must be true')
+        exit()
+
+    if config.global_output and config.pc_localized:
+        print('Invalid config file. "global_output" and "pc_localized" cannot both be true')
+        exit()
+
+    if not config.global_output and not config.pc_localized:
+        print('Invalid config file. "global_output" and "pc_localized" cannot both be false')
+        exit()
 
     # If the debug flag was raised, reduce the number of steps to have faster epochs
     if debug:
