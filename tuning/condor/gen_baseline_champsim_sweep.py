@@ -53,15 +53,22 @@ def get_baseline_parser():
     parser.add_argument(
         '--warmup-pct',
         help='Percentage of the trace to warmup instructions in percent (default 90)',
-        default=90,
-        type=int
+        default=90.0,
+        type=float
     )
     parser.add_argument(
         '--n-heartbeat',
-        help='Heartbeat interval, in millions of instructions in millions (default 1m)',
+        help='Heartbeat interval, in millions of instructions (default 1m)',
         default=1,
         type=int
     )
+    parser.add_argument(
+        '--n-instructions',
+        help='Total instrucitons, in millions (default 300m if gap, 500m if spec)',
+        default=None,
+        type=int
+    )
+
     return parser
 
 
@@ -122,7 +129,10 @@ def main():
         # warmup    : if online, 0
         #           : if offline, total * (train_split + valid_split)
         #             - prefetch trace covers last testing x% (if offline).
-        num_inst   = 500 if 'spec' in tr_path else 300 # In millions
+        if args.n_instructions:
+            num_inst = args.n_instructions
+        else:
+            num_inst = 500 if 'spec' in tr_path else 300 # In millions
         num_warmup = int(round(num_inst * (args.warmup_pct / 100))) # First (train+valid)% go to warmup.
         stat_interval = args.n_heartbeat
 
