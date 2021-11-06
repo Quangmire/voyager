@@ -34,6 +34,10 @@ class ModelWrapper:
         self.lr_decay = None
         self.tensorboard_path = None
         self.num_offsets = (1 << config.offset_bits)
+        self.model_path = None
+        self.monitor = None
+        self.recreate_chkpt = False
+        self.chkpt = None
 
         # Create a model
         print('DEBUG : Creating a model with...')
@@ -71,6 +75,29 @@ class ModelWrapper:
             )
             # Do this to not affect the callbacks list which .append(..) would
             callbacks = callbacks + [tensorboard]
+        if self.config.learning_rate_decay > 1:
+            self.lr_decay = ReduceLROnPlateauWithConfig(
+                monitor='val_acc',
+                factor=1 / self.config.learning_rate_decay,
+                patience=5,
+                mode='max',
+                verbose=1,
+                min_lr=self.config.min_learning_rate,
+                min_delta=0.005,
+            )
+            callbacks = callbacks + [self.lr_decay]
+            self.backups['lr_decay'] = self.lr_decay
+        if self.model_path is not None:
+            if self.recreate_chkpt or self.chkpt is None:
+                self.chkpt = tf.keras.callbacks.ModelCheckpoint(
+                        filepath=self.model_path,
+                        save_weights_only=True,
+                        monitor='val_acc' if self.monitor is None else self.monitor,
+                        mode='max',
+                        save_best_only=True,
+                        verbose=1,
+                )
+                callbacks = callbacks + [self.chkpt]
 
         # Create callback list
         self.callbacks = tf.keras.callbacks.CallbackList(
@@ -90,15 +117,7 @@ class ModelWrapper:
 
         # Set-up model checkpoint callback.
         if args.model_path:
-            self._callbacks.append(
-                tf.keras.callbacks.ModelCheckpoint(
-                    filepath=args.model_path,
-                    save_weights_only=True,
-                    monitor='val_acc',
-                    mode='max',
-                    save_best_only=True,
-                    verbose=1,
-            ))
+            self.model_path = args.model_path
         else:
             print('Notice: Not checkpointing the model. To do so, please provide a path to --model-path.')
 
@@ -110,19 +129,7 @@ class ModelWrapper:
 
         # Set-up ResumeCheckpoint callback.
         # Set-up learning rate decay callback.
-        if self.config.learning_rate_decay > 1:
-            self.lr_decay = ReduceLROnPlateauWithConfig(
-                monitor='val_acc',
-                factor=1 / self.config.learning_rate_decay,
-                patience=5,
-                mode='max',
-                verbose=1,
-                min_lr=self.config.min_learning_rate,
-                min_delta=0.005,
-            )
-            self._callbacks.append(self.lr_decay)
-            self.backups['lr_decay'] = self.lr_decay
-        else:
+        if self.config.learning_rate_decay <= 1:
             print('Notice: Not decaying learning rate. To do so, please provide learning_rate_decay > 1.0 in the config file.')
 
         # Create and add in ResumeCheckpoint
@@ -144,6 +151,8 @@ class ModelWrapper:
         with tf.GradientTape() as tape:
             logits = self.model(x, training=True)
             loss_value = self.model.loss(y, logits)
+            # regularization_loss = tf.add_n(self.model.losses)
+            # loss_value += 0.001 * regularization_loss
 
         # Update gradient
         grads = tape.gradient(loss_value, self.model.trainable_weights)
@@ -190,7 +199,7 @@ class ModelWrapper:
                 self.epoch += 1
                 # Evaluate on validation dataset if it was passed in
                 if valid_ds is not None:
-                    val_logs = self.evaluate([valid_ds])
+                    val_logs = self.evaluate([valid_ds], training=True)
                     logs.update(val_logs)
                 self.callbacks.on_epoch_end(self.epoch - 1, logs)
                 epoch_ended = True
@@ -211,6 +220,8 @@ class ModelWrapper:
         # Change # of epochs to # of online epochs
         orig_num_epochs = self.config.num_epochs
         self.config.num_epochs = (self.phase + 1) * self.config.num_epochs_online
+        self.monitor = 'acc'
+        self.recreate_chkpt = True
 
         # Enables online training printing
         if self.batch_logger:
@@ -220,6 +231,8 @@ class ModelWrapper:
         for train_ds, eval_ds in zip(train_datasets, eval_datasets):
             # Train while showing eval performance
             self.train(train_ds, eval_ds)
+            # Reload the best model
+            self.load(self.model_path)
             # Generate on eval dataset
             inst_ids, addresses, _ = self.generate([eval_ds])
             # TODO: Resume functionality doesn't work when the file writing fails
@@ -256,14 +269,15 @@ class ModelWrapper:
             logs['val_' + metric.name] = metric.result()
         return logs
 
-    def evaluate(self, datasets=None, callbacks=None):
+    def evaluate(self, datasets=None, callbacks=None, training=False):
         # Setup default datasets if there are None
         if datasets is None:
             train_ds, valid_ds, test_ds = self.benchmark.split(self.epoch, self.step)
             datasets = [test_ds]
 
         # Create callbacks list anew
-        self._init_callbacks(callbacks if callbacks is not None else [])
+        if not training:
+            self._init_callbacks(callbacks if callbacks is not None else [])
 
         # Validation over dataset
         self.reset_metrics()

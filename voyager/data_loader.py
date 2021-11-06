@@ -31,10 +31,12 @@ class BenchmarkTrace:
     def read_and_process_file(self, f):
         self._read_file(f)
         self.reverse_page_mapping = {v: k for k, v in self.page_mapping.items()}
+        if self.config.use_deltas:
+            self._replace_with_deltas()
+        self.reverse_page_mapping = {v: k for k, v in self.page_mapping.items()}
         if self.config.multi_label:
             self._generate_multi_label()
             # Needs to be regenerated to include deltas
-            self.reverse_page_mapping = {v: k for k, v in self.page_mapping.items()}
         self._tensor()
 
     @timefunction('Tensoring data')
@@ -64,28 +66,23 @@ class BenchmarkTrace:
                 cur_phase += 1
             self.process_row(i, inst_id, pc, addr)
 
-    @timefunction('Generating multi-label data')
-    def _generate_multi_label(self):
-        # Previous address for delta localization
+    def _replace_with_deltas(self):
         prev_addr = {}
         if self.config.global_output:
             prev_addr['global'] = None
-        self.pages = []
-        self.offsets = []
-        # 1 Global + 1 Delta + 1 PC + 1 Spatial + up to 10 Co-occurrence
-        width = 14
-        for i, (inst_id, mapped_pc, mapped_page, offset) in enumerate(self.data):
-            mapped_pages = []
-            offsets = []
-
+        n_deltas = 0
+        n_total = 0
+        n_applicable = 0
+        self.orig = {}
+        for i, (inst_id, mapped_pc, mapped_page, offset, pc_data_idx) in enumerate(self.data):
+            if i == 0:
+                continue
+            n_total += 1
             # Cache line of next load
             cur_addr = (self.reverse_page_mapping[mapped_page] << self.config.offset_bits) + offset
 
-            # DELTAS FOR INFREQUENT ADDRESSES
             if self.count[(mapped_page, offset)] <= 2:
-                # First spot for global which is unused here
-                mapped_pages.append(-1)
-                offsets.append(-1)
+                n_applicable += 1
                 # Only do delta if we're not the first memory address
                 if (self.config.pc_localized and mapped_pc in prev_addr) or (self.config.global_stream and prev_addr['global'] is not None):
                     if self.config.pc_localized:
@@ -108,28 +105,58 @@ class BenchmarkTrace:
                             if dist_page not in self.page_mapping:
                                 self.page_mapping[dist_page] = len(self.page_mapping)
 
-                            mapped_pages.append(self.page_mapping[dist_page])
-                            offsets.append(dist_offset)
-                    # Want to associate second spot with delta
-                    else:
-                        mapped_pages.append(-1)
-                        offsets.append(-1)
-                # Want to associate second spot with delta
+                            self.orig[i] = [self.data[i][2], self.data[i][3]]
+                            self.data[i][2] = self.page_mapping[dist_page]
+                            self.data[i][3] = dist_offset
+                            n_deltas += 1
+
+            # Save for delta
+            if self.config.pc_localized:
+                prev_addr[mapped_pc] = cur_addr
+            else:
+                prev_addr['global'] = cur_addr
+        print('# Deltas:', n_deltas, n_deltas / n_applicable, n_deltas / n_total)
+
+    def _apply_delta(self, addr, page, offset):
+        dist = (int(self.reverse_page_mapping[page][1:]) << 6) + offset
+        if self.reverse_page_mapping[page][0] == '+':
+            return addr + dist
+        else:
+            return addr - dist
+
+    def _idx_to_addr(self, data_idx):
+        page = self.reverse_page_mapping[self.data[data_idx][2]]
+        if isinstance(page, str):
+            return (self.orig[data_idx][0] << self.config.offset_bits) + self.orig[data_idx][1]
+        else:
+            return (page << self.config.offset_bits) + self.data[data_idx][3]
+
+    @timefunction('Generating multi-label data')
+    def _generate_multi_label(self):
+        # Previous address for delta localization
+        self.pages = []
+        self.offsets = []
+        # 1 Global / Delta + 1 PC + 1 Spatial + up to 10 Co-occurrence
+        width = 13
+        for i, (inst_id, mapped_pc, mapped_page, offset, pc_data_idx) in enumerate(self.data):
+            if i == 0:
+                self.pages.append([0 for _ in range(width)])
+                self.offsets.append([0 for _ in range(width)])
+                continue
+            # First spot associated with main output
+            mapped_pages = [mapped_page]
+            offsets = [offset]
+
+            cur_addr = self._idx_to_addr(i)
+
+            # If we're PC localized, we do global here
+            if not self.config.global_output:
+                if i < len(self.data) - 1:
+                    mapped_pages.append(self.data[i + 1][2])
+                    offsets.append(self.data[i + 1][3])
                 else:
                     mapped_pages.append(-1)
                     offsets.append(-1)
-            # ORIGINAL OTHERWISE
-            else:
-                # First spot with global
-                mapped_pages.append(mapped_page)
-                offsets.append(offset)
-                # Second spot for delta which is unused here
-                mapped_pages.append(-1)
-                offsets.append(-1)
-
-            if not self.config.global_output:
-                mapped_pages.append(-1)
-                offsets.append(-1)
             else:
                 # PC LOCALIZATION
                 if self.pc_addrs_idx[mapped_pc] < len(self.pc_addrs[mapped_pc]) - 1:
@@ -145,8 +172,9 @@ class BenchmarkTrace:
             # SPATIAL LOCALIZATION
             # TODO: Possibly need to examine this default distance value to make sure that it
             #       isn't too small (or large) for accessing the max temporal distance
-            for (_, _, spatial_page, spatial_offset) in self.data[i:i + 10]:
-                if 0 < (1 << self.config.offset_bits) * (spatial_page - mapped_page) + (spatial_offset - offset) < 257:
+            for j, (_, _, spatial_page, spatial_offset, _) in enumerate(self.data[i:i + 10]):
+                spatial_addr = self._idx_to_addr(j + i)
+                if 0 < abs(spatial_addr - cur_addr) < 257:
                     mapped_pages.append(spatial_page)
                     offsets.append(spatial_offset)
                     break
@@ -166,8 +194,8 @@ class BenchmarkTrace:
             #         last loads throughout the trace.
             freq = {}
             best = 0
-            for (_, _, co_page, co_offset) in self.data[i:i + 10]:
-                tag = co_page
+            for (_, _, co_page, co_offset, _) in self.data[i:i + 10]:
+                tag = (co_page, co_offset)
                 if tag not in freq:
                     freq[tag] = 0
                 freq[tag] += 1
@@ -177,16 +205,10 @@ class BenchmarkTrace:
             # co-occurrence would be slightly meaningless
             if best >= 2:
                 # Take the most frequent cache lines
-                for (_, _, co_page, co_offset) in self.data[i:i + 10]:
-                    if freq[co_page] == best:
+                for (_, _, co_page, co_offset, _) in self.data[i:i + 10]:
+                    if freq[(co_page, co_offset)] == best:
                         mapped_pages.append(co_page)
                         offsets.append(co_offset)
-
-            # Save for delta
-            if self.config.pc_localized:
-                prev_addr[mapped_pc] = cur_addr
-            else:
-                prev_addr['global'] = cur_addr
 
             # Working with rectangular tensors is infinitely more painless than
             # Tensorflow's ragged tensors that have a bunch of unsupported ops
@@ -264,7 +286,7 @@ class BenchmarkTrace:
         # Computing end of train and validation splits
         train_split = int(self.config.train_split * (len(self.data) - self.config.sequence_length)) + self.config.sequence_length
         valid_split = int((self.config.train_split + self.config.valid_split) * (len(self.data) - self.config.sequence_length)) + self.config.sequence_length
-        print('TEST INST ID STARTS AROUND ~', self.data[valid_split, 0])
+        print('TEST INST ID STARTS AROUND ~', self.data[valid_split, 0].numpy())
 
         return train_split, valid_split
 
@@ -341,15 +363,16 @@ class BenchmarkTrace:
                 hists.append(offset_hist)
 
             if not self.config.global_output:
+                inst_id = self.data[self.pc_data[cur_pc, end - 1], 0]
                 if self.config.multi_label:
                     page_hist = tf.gather(self.pages, self.pc_data[cur_pc, start:end + 1])
                     offset_hist = tf.gather(self.offsets, self.pc_data[cur_pc, start:end + 1])
                     if self.config.sequence_loss:
-                        y_page = page_hist[1 + self.config.prediction_depth:, 2]
-                        y_offset = offset_hist[1 + self.config.prediction_depth:, 3]
+                        y_page = page_hist[1 + self.config.prediction_depth:, :]
+                        y_offset = offset_hist[1 + self.config.prediction_depth:, :]
                     else:
-                        y_page = page_hist[-1:, 2]
-                        y_offset = offset_hist[-1:, 3]
+                        y_page = page_hist[-1:, :]
+                        y_offset = offset_hist[-1:, :]
                 else:
                     if self.config.sequence_loss:
                         y_page = hist[1 + self.config.prediction_depth:, 2]

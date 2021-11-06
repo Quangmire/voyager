@@ -88,6 +88,7 @@ class Voyager(tf.keras.Model):
                     self.lstm_size,
                     return_sequences=True,
                     kernel_regularizer='l1',
+                    dropout=self.config.lstm_dropout,
                 ) for i in range(self.num_layers)
             ])
             self.fine_layers = tf.keras.Sequential([
@@ -95,6 +96,7 @@ class Voyager(tf.keras.Model):
                     self.lstm_size,
                     return_sequences=True,
                     kernel_regularizer='l1',
+                    dropout=self.config.lstm_dropout,
                 ) for i in range(self.num_layers)
             ])
         else:
@@ -103,6 +105,7 @@ class Voyager(tf.keras.Model):
                     self.lstm_size,
                     return_sequences=(i != self.num_layers - 1),
                     kernel_regularizer='l1',
+                    dropout=self.config.lstm_dropout,
                 ) for i in range(self.num_layers)
             ])
             self.fine_layers = tf.keras.Sequential([
@@ -110,6 +113,7 @@ class Voyager(tf.keras.Model):
                     self.lstm_size,
                     return_sequences=(i != self.num_layers - 1),
                     kernel_regularizer='l1',
+                    dropout=self.config.lstm_dropout,
                 ) for i in range(self.num_layers)
             ])
 
@@ -125,21 +129,21 @@ class Voyager(tf.keras.Model):
         # Still need to return original logs
         return ret
 
-    def address_embed(self, pages, offsets):
+    def address_embed(self, pages, offsets, training=False):
         page_embed = self.page_embedding(pages)
         offset_embed = self.offset_embedding(offsets)
 
         # Compute page-aware offset embedding
         tmp_page_embed = tf.reshape(page_embed, shape=(-1, self.sequence_length, 1, self.page_embed_size))
         offset_embed = tf.reshape(offset_embed, shape=(-1, self.sequence_length, self.offset_embed_size // self.page_embed_size, self.page_embed_size))
-        offset_embed = tf.reshape(self.mha(tmp_page_embed, offset_embed), shape=(-1, self.sequence_length, self.page_embed_size))
+        offset_embed = tf.reshape(self.mha(tmp_page_embed, offset_embed, training=training), shape=(-1, self.sequence_length, self.page_embed_size))
 
         return page_embed, offset_embed
 
     def lstm_output(self, lstm_inputs, training=False):
         # Run through LSTM
         # Manual embedding dropout to have reproducible dropout randomness
-        lstm_inputs = Stateless.dropout_input(lstm_inputs, self.dropout, seed=(self.epoch, self.step), training=training)
+        #lstm_inputs = Stateless.dropout_input(lstm_inputs, self.dropout, seed=(self.epoch, self.step), training=training)
         coarse_out = self.coarse_layers(lstm_inputs, training=training)
         fine_out = self.fine_layers(lstm_inputs, training=training)
 
@@ -164,7 +168,7 @@ class Voyager(tf.keras.Model):
 
         # Compute embeddings
         pc_embed = self.pc_embedding(pcs)
-        page_embed, offset_embed = self.address_embed(pages, offsets)
+        page_embed, offset_embed = self.address_embed(pages, offsets, training=training)
 
         if self.config.pc_localized and self.config.global_stream:
             pc_localized_pcs = inputs[:, 3 * self.sequence_length:4 * self.sequence_length]
@@ -173,7 +177,7 @@ class Voyager(tf.keras.Model):
 
             # Compute embeddings
             pc_localized_pc_embed = self.pc_embedding(pc_localized_pcs)
-            pc_localized_page_embed, pc_localized_offset_embed = self.address_embed(pc_localized_pages, pc_localized_offsets)
+            pc_localized_page_embed, pc_localized_offset_embed = self.address_embed(pc_localized_pages, pc_localized_offsets, training=training)
 
             lstm_inputs = tf.concat([pc_embed, page_embed, offset_embed,
                 pc_localized_pc_embed, pc_localized_page_embed, pc_localized_offset_embed], 2)

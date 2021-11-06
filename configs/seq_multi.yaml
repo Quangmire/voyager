@@ -1,6 +1,6 @@
 name: "Base Voyager with Sequence Loss"
 # Training Parameters
-batch_size: 64
+batch_size: 256
 learning_rate: 0.001
 learning_rate_decay: 2
 min_learning_rate: 0.0001
@@ -18,12 +18,13 @@ offset_bits: 6
 prediction_depth: 0
 global_stream: False
 pc_localized: True
+use_deltas: True
 # LSTM Parameters
 pc_embed_size: 64
-page_embed_size: 128
+page_embed_size: 256
 num_experts: 100
 lstm_size: 256
-lstm_dropout: 0.8
+lstm_dropout: 0.2
 lstm_layers: 1
 # Output Parameters
 global_output: False # By default, models predict the pc localized output
