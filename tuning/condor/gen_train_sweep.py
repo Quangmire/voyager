@@ -51,7 +51,7 @@ def main():
 
     # For each trace, generate each permuted configuration and its script.
     for tr_path in trace_paths:
-        tr = tr_path.split('/')[-1].rstrip('.xz').rstrip('.gz').rstrip('.bz')
+        tr = tr_path.split('/')[-1].rstrip('.xz').rstrip('.gz').rstrip('.bz').rstrip('.txt')
         for var, var_name in zip(variations, variation_names):
             # Setup initial output directories/files per experiment
             tensorboard_dir = os.path.join(base_dir, 'tensorboard', tr, 'train', var_name + '/')
