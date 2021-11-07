@@ -47,7 +47,7 @@ def load_config(config_path, debug=False):
 
     # If the debug flag was raised, reduce the number of steps to have faster epochs
     if debug:
-        config.steps_per_epoch = 2000
+        config.steps_per_epoch = 8000
 
     return config
 
