@@ -182,7 +182,7 @@ class ModelWrapper:
         logs = {}
 
         # Main training loop
-        for _, x, y_page, y_out in train_ds:
+        for _, _, x, y_page, y_out in train_ds:
             epoch_ended = False
             self.step += 1
 
@@ -285,7 +285,7 @@ class ModelWrapper:
 
         # Validation loop
         for ds in datasets:
-            for step, (_, x, y_page, y_out) in enumerate(ds):
+            for step, (_, _, x, y_page, y_out) in enumerate(ds):
                 self.callbacks.on_test_batch_begin(step)
                 logs = self.evaluate_step(x, (y_page, y_out))
                 self.callbacks.on_test_batch_end(step, logs)
@@ -320,7 +320,7 @@ class ModelWrapper:
         self.reset_metrics()
         self.callbacks.on_test_begin()
         for ds in datasets:
-            for step, (batch_inst_ids, x, y_page, y_out) in enumerate(ds):
+            for step, (idx, batch_inst_ids, x, y_page, y_out) in enumerate(ds):
                 self.callbacks.on_test_batch_begin(step)
                 logits, logs = self.generate_step(x, (y_page, y_out))
 
@@ -338,11 +338,11 @@ class ModelWrapper:
                 pred_offsets = tf.argmax(offset_logits, -1).numpy().tolist()
 
                 # Unmap addresses
-                for xi, inst_id, pred_page, pred_offset in zip(x.numpy().tolist(), batch_inst_ids.numpy().tolist(), pred_pages, pred_offsets):
+                for idxi, xi, inst_id, pred_page, pred_offset in zip(idx.numpy().tolist(), x.numpy().tolist(), batch_inst_ids.numpy().tolist(), pred_pages, pred_offsets):
                     # OOV
                     if pred_page == 0:
                         continue
-                    addresses.append(self.benchmark.unmap(xi, pred_page, pred_offset, self.config.sequence_length))
+                    addresses.append(self.benchmark.unmap(idxi, xi, pred_page, pred_offset, self.config.sequence_length))
                     inst_ids.append(inst_id)
 
                 self.callbacks.on_test_batch_end(step, logs)

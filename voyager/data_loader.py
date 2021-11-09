@@ -124,12 +124,24 @@ class BenchmarkTrace:
         else:
             return addr - dist
 
+    def _apply_delta_to_idx(self, idx, page, offset):
+        prev_idx = self.pc_data[self.data[idx, 1], self.data[idx, 4] - 1]
+        prev_addr = self._idx_to_addr(prev_idx)
+        return self._apply_delta(prev_addr, page, offset)
+
     def _idx_to_addr(self, data_idx):
-        page = self.reverse_page_mapping[self.data[data_idx][2]]
-        if isinstance(page, str):
-            return (self.orig[data_idx][0] << self.config.offset_bits) + self.orig[data_idx][1]
+        if isinstance(self.data, tf.Tensor):
+            page = self.reverse_page_mapping[self.data[data_idx, 2].numpy()]
+            if isinstance(page, str):
+                return (self.orig[data_idx.numpy()][0] << self.config.offset_bits) + self.orig[data_idx.numpy()][1]
+            else:
+                return (page << self.config.offset_bits) + self.data[data_idx, 3].numpy()
         else:
-            return (page << self.config.offset_bits) + self.data[data_idx][3]
+            page = self.reverse_page_mapping[self.data[data_idx][2]]
+            if isinstance(page, str):
+                return (self.orig[data_idx][0] << self.config.offset_bits) + self.orig[data_idx][1]
+            else:
+                return (page << self.config.offset_bits) + self.data[data_idx][3]
 
     @timefunction('Generating multi-label data')
     def _generate_multi_label(self):
@@ -381,7 +393,7 @@ class BenchmarkTrace:
                         y_page = hist[-1:, 2]
                         y_offset = hist[-1:, 3]
 
-            return inst_id, tf.concat(hists, axis=-1), y_page, y_offset
+            return idx, inst_id, tf.concat(hists, axis=-1), y_page, y_offset
 
         # Closure for generating a reproducible random sequence
         epoch_size = self.config.steps_per_epoch * self.config.batch_size
@@ -455,20 +467,12 @@ class BenchmarkTrace:
         return train_ds, valid_ds, test_ds
 
     # Unmaps the page and offset
-    def unmap(self, x, page, offset, sequence_length):
+    def unmap(self, idx, x, page, offset, sequence_length):
         unmapped_page = self.reverse_page_mapping[page]
 
         # DELTA LOCALIZED
         if isinstance(unmapped_page, str):
-            prev_page = x[2 * sequence_length - 1]
-            prev_offset = x[-1]
-            unmapped_prev_page = self.reverse_page_mapping[prev_page]
-            prev_addr = (unmapped_prev_page << self.config.offset_bits) + prev_offset
-            delta = int(unmapped_page[1:])
-            if unmapped_page[0] == '+':
-                ret_addr = prev_addr + delta
-            else:
-                ret_addr = prev_addr - delta
+            ret_addr = self._apply_delta_to_idx(idx, page, offset)
         else:
             ret_addr = (unmapped_page << self.config.offset_bits) + offset
 
