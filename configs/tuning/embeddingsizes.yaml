@@ -8,9 +8,9 @@ meta:
     sweep_dir: "/scratch/cluster/cmolder/voyager_hypertuning/embeddingsizes/"
     use_gpu: true
     print_every: 100
-    checkpoint_every: 10000
+    checkpoint_every: 500
     champsim_print_every: 1 # million instructions 
-traces: ["spec17/605.mcf-s0.txt.xz"]
+traces: ["spec06/473.astar-s0.txt.xz"]
 config: # If an array, it generates permutations of the values. Otherwise, it keeps them constant.
     name: "Base Voyager"
     # Training Parameters
@@ -32,6 +32,7 @@ config: # If an array, it generates permutations of the values. Otherwise, it ke
     prediction_depth: 0
     global_stream: False
     pc_localized: True
+    use_deltas: False
     # LSTM Parameters
     pc_embed_size: [16, 32, 64, 128, 256]
     page_embed_size: [32, 64, 128, 256]

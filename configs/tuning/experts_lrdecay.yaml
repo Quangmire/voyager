@@ -8,15 +8,16 @@ meta:
     sweep_dir: "/scratch/cluster/cmolder/voyager_hypertuning/experts_lrdecay/"
     use_gpu: true
     print_every: 100
-    checkpoint_every: 10000
+    checkpoint_every: 500
     champsim_print_every: 1 # million instructions 
-traces: ["spec17/605.mcf-s0.txt.xz"]
+traces: ["spec06/473.astar-s0.txt.xz"]
 config: # If an array, it generates permutations of the values. Otherwise, it keeps them constant.
     name: "Base Voyager"
     # Training Parameters
     batch_size: 512
     learning_rate: 0.001
     min_learning_rate: 0.0001
+    learning_rate_decay: [1, 2]
     num_epochs: 25
     num_epochs_online: 20
     steps_per_epoch: 80000
@@ -31,11 +32,11 @@ config: # If an array, it generates permutations of the values. Otherwise, it ke
     prediction_depth: 0
     global_stream: False
     pc_localized: True
+    use_deltas: False
     # LSTM Parameters
     pc_embed_size: 64
     page_embed_size: [64, 256]
     num_experts: [10, 25, 50, 75, 100]
-    learning_rate_decay: [1, 2]
     lstm_size: 256
     lstm_dropout: 0.8
     lstm_layers: 1

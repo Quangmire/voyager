@@ -12,7 +12,7 @@ meta:
     sweep_dir: "/scratch/cluster/cmolder/voyager_hypertuning/tuned/"
     use_gpu: true
     print_every: 100
-    checkpoint_every: 10000
+    checkpoint_every: 500
     champsim_print_every: 1 # million instructions 
 traces: [
     "spec17/605.mcf-s0.txt.xz", # mcf
@@ -53,6 +53,9 @@ config: # If an array, it generates permutations of the values. Otherwise, it ke
     pc_localization: False  # Train on PC localized stream instead of global stream
     sequence_length: 16
     offset_bits: 6
+    global_stream: False
+    pc_localized: True
+    use_deltas: False
     # LSTM Parameters
     pc_embed_size: 64
     page_embed_size: 128
@@ -60,3 +63,5 @@ config: # If an array, it generates permutations of the values. Otherwise, it ke
     lstm_size: 256
     lstm_dropout: 0.8
     lstm_layers: 1
+    # Output Parameters
+    global_output: False # By default, models predict the pc localized output

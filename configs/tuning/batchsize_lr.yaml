@@ -5,20 +5,20 @@ meta:
     trace_dirs:
         load: "/scratch/cluster/qduong/ML-DPC/data/load_traces/"
         champsim: "/scratch/cluster/cmolder/ML-DPC/ChampSimTraces/"
-    sweep_dir: "/scratch/cluster/cmolder/voyager_hypertuning/learningrate_batchsize/"
+    sweep_dir: "/scratch/cluster/cmolder/voyager_hypertuning/batchsize_lr/"
     use_gpu: true
     print_every: 100
-    checkpoint_every: 10000
+    checkpoint_every: 500
     champsim_print_every: 1 # million instructions 
-traces: ["spec17/605.mcf-s0.txt.xz"]
+traces: ["spec06/473.astar-s0.txt.xz"]
 config: # If an array, it generates permutations of the values. Otherwise, it keeps them constant.
     name: "Base Voyager"
     # Training Parameters
-    learning_rate: [0.01, 0.001, 0.0001, 0.00001]
     batch_size: [32, 64, 128, 256, 512]
+    learning_rate: [0.01, 0.001, 0.0001, 0.00001]
     learning_rate_decay: 2
     min_learning_rate: 0.0001
-    num_epochs: 25
+    num_epochs: 100
     num_epochs_online: 20
     steps_per_epoch: 80000
     train_split: 0.8
@@ -32,12 +32,13 @@ config: # If an array, it generates permutations of the values. Otherwise, it ke
     prediction_depth: 0
     global_stream: False
     pc_localized: True
+    use_deltas: False
     # LSTM Parameters
     pc_embed_size: 64
-    page_embed_size: 128
+    page_embed_size: 256
     num_experts: 100
     lstm_size: 256
-    lstm_dropout: 0.8
+    lstm_dropout: 0.2
     lstm_layers: 1
     # Output Parameters
     global_output: False # By default, models predict the pc localized output
