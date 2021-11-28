@@ -2,6 +2,6 @@
 __pycache__/
 *.py[cod]
 *$py.class
-models/
+models*/
 load_traces
-logs/
+logs*/

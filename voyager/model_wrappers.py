@@ -143,6 +143,8 @@ class ModelWrapper:
             )
 
     def load(self, model_path):
+        if not self.model.built:
+            self.model(tf.zeros((1, self.model.sequence_length * 3,)))
         self.model.load(model_path)
 
     @tf.function
@@ -182,7 +184,7 @@ class ModelWrapper:
         logs = {}
 
         # Main training loop
-        for _, x, y_page, y_out in train_ds:
+        for _, _, x, y_page, y_offset in train_ds:
             epoch_ended = False
             self.step += 1
 
@@ -190,7 +192,7 @@ class ModelWrapper:
             if self.step <= self.config.steps_per_epoch:
                 # Do one train step
                 self.callbacks.on_train_batch_begin(self.step)
-                logs = self.train_step(x, (y_page, y_out))
+                logs = self.train_step(x, (y_page, y_offset))
                 self.callbacks.on_train_batch_end(self.step, logs)
 
             # Advance an epoch
@@ -263,7 +265,7 @@ class ModelWrapper:
         loss_value = self.model.loss(y, logits)
 
         # Save logs of loss and metrics
-        logs = {'loss': loss_value}
+        logs = {'val_loss': loss_value}
         for metric in self.model.metrics:
             metric.update_state(y, logits)
             logs['val_' + metric.name] = metric.result()
@@ -285,9 +287,9 @@ class ModelWrapper:
 
         # Validation loop
         for ds in datasets:
-            for step, (_, x, y_page, y_out) in enumerate(ds):
+            for step, (_, _, x, y_page, y_offset) in enumerate(ds):
                 self.callbacks.on_test_batch_begin(step)
-                logs = self.evaluate_step(x, (y_page, y_out))
+                logs = self.evaluate_step(x, (y_page, y_offset))
                 self.callbacks.on_test_batch_end(step, logs)
         self.callbacks.on_test_end(logs)
 
@@ -300,7 +302,7 @@ class ModelWrapper:
         loss_value = self.model.loss(y, logits)
 
         # Save logs, but they may not end up getting used here
-        logs = {'loss': loss_value}
+        logs = {'val_loss': loss_value}
         for metric in self.model.metrics:
             metric.update_state(y, logits)
             logs['val_' + metric.name] = metric.result()
@@ -319,10 +321,16 @@ class ModelWrapper:
         inst_ids = []
         self.reset_metrics()
         self.callbacks.on_test_begin()
+
+        def sigmoid(x):
+            return 1 / (1 + np.exp(-x))
+
         for ds in datasets:
-            for step, (batch_inst_ids, x, y_page, y_out) in enumerate(ds):
+            correct = 0
+            total = 0
+            for step, (idx, batch_inst_ids, x, y_page, y_offset) in enumerate(ds):
                 self.callbacks.on_test_batch_begin(step)
-                logits, logs = self.generate_step(x, (y_page, y_out))
+                logits, logs = self.generate_step(x, (y_page, y_offset))
 
                 # Grab the final (only) timestep logits
                 if self.config.sequence_loss:
@@ -333,19 +341,29 @@ class ModelWrapper:
                     offset_logits = logits[:, -self.num_offsets:]
 
                 # Argmax for prediction
-                # TODO: Possibly threshold here
                 pred_pages = tf.argmax(page_logits, -1).numpy().tolist()
                 pred_offsets = tf.argmax(offset_logits, -1).numpy().tolist()
 
+                page_logits = page_logits.numpy()
+                offset_logits = offset_logits.numpy()
                 # Unmap addresses
-                for xi, inst_id, pred_page, pred_offset in zip(x.numpy().tolist(), batch_inst_ids.numpy().tolist(), pred_pages, pred_offsets):
+                for i, (idxi, xi, inst_id, pred_page, pred_offset, yp, yo) in enumerate(zip(idx.numpy().tolist(), x.numpy().tolist(), batch_inst_ids.numpy().tolist(), pred_pages, pred_offsets, y_page.numpy().tolist(), y_offset.numpy().tolist())):
+                    '''
+                    # TODO: Possibly threshold here
+                    if sigmoid(page_logits[i, pred_page]) < 0.99999 or sigmoid(offset_logits[i, pred_offset]) < 0.99999:
+                        continue
+                    '''
+                    total += 1
                     # OOV
                     if pred_page == 0:
                         continue
-                    addresses.append(self.benchmark.unmap(xi, pred_page, pred_offset, self.config.sequence_length))
+                    if pred_page == yp[-1] and pred_offset == yo[-1]:
+                        correct += 1
+                    addresses.append(self.benchmark.unmap(idxi, xi, pred_page, pred_offset, self.config.sequence_length))
                     inst_ids.append(inst_id)
 
                 self.callbacks.on_test_batch_end(step, logs)
+            print(correct / total * 100, total)
 
         self.callbacks.on_test_end(logs)
 

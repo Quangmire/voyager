@@ -16,7 +16,7 @@ use_current_pc: False   # Feed in PC of current load instead of previous load at
 sequence_length: 16
 offset_bits: 6
 prediction_depth: 0
-global_stream: True
+global_stream: False
 pc_localized: True
 use_deltas: True
 # LSTM Parameters

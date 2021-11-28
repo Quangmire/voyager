@@ -27,16 +27,17 @@ class BenchmarkTrace:
         # Stores address localized streams for spatial localization
         self.cache_lines = {}
         self.cache_lines_idx = {}
+        self.orig_addr = [0]
 
     def read_and_process_file(self, f):
         self._read_file(f)
         self.reverse_page_mapping = {v: k for k, v in self.page_mapping.items()}
         if self.config.use_deltas:
             self._replace_with_deltas()
-        self.reverse_page_mapping = {v: k for k, v in self.page_mapping.items()}
+            # Needs to be regenerated to include deltas
+            self.reverse_page_mapping = {v: k for k, v in self.page_mapping.items()}
         if self.config.multi_label:
             self._generate_multi_label()
-            # Needs to be regenerated to include deltas
         self._tensor()
 
     @timefunction('Tensoring data')
@@ -105,7 +106,7 @@ class BenchmarkTrace:
                             if dist_page not in self.page_mapping:
                                 self.page_mapping[dist_page] = len(self.page_mapping)
 
-                            self.orig[i] = [self.data[i][2], self.data[i][3]]
+                            self.orig[i] = [self.reverse_page_mapping[self.data[i][2]], self.data[i][3]]
                             self.data[i][2] = self.page_mapping[dist_page]
                             self.data[i][3] = dist_offset
                             n_deltas += 1
@@ -124,12 +125,28 @@ class BenchmarkTrace:
         else:
             return addr - dist
 
+    def _apply_delta_to_idx(self, idx, page, offset):
+        prev_idx = self.pc_data[self.data[idx, 1], self.data[idx, 4] - 1]
+        prev_addr = self._idx_to_addr(prev_idx)
+        return self._apply_delta(prev_addr, page, offset)
+
     def _idx_to_addr(self, data_idx):
-        page = self.reverse_page_mapping[self.data[data_idx][2]]
-        if isinstance(page, str):
-            return (self.orig[data_idx][0] << self.config.offset_bits) + self.orig[data_idx][1]
+        if isinstance(self.data, tf.Tensor):
+            page = self.data[data_idx, 2].numpy()
+            actual_page = self.reverse_page_mapping[page]
+            offset = self.data[data_idx, 3].numpy()
+            if isinstance(actual_page, str):
+                return (self.orig[data_idx.numpy()][0] << self.config.offset_bits) + self.orig[data_idx.numpy()][1]
+            else:
+                return (actual_page << self.config.offset_bits) + offset
         else:
-            return (page << self.config.offset_bits) + self.data[data_idx][3]
+            page = self.data[data_idx][2]
+            actual_page = self.reverse_page_mapping[page]
+            offset = self.data[data_idx][3]
+            if isinstance(actual_page, str):
+                return (self.orig[data_idx][0] << self.config.offset_bits) + self.orig[data_idx][1]
+            else:
+                return (actual_page << self.config.offset_bits) + offset
 
     @timefunction('Generating multi-label data')
     def _generate_multi_label(self):
@@ -264,6 +281,7 @@ class BenchmarkTrace:
         # in the ML-DPC modified version of ChampSim.
         # See github.com/Quangmire/ChampSim
         self.data.append([inst_id, self.pc_mapping[pc], self.page_mapping[page], offset, len(self.pc_data[self.pc_mapping[pc]])])
+        self.orig_addr.append(cache_line)
         self.pc_data[self.pc_mapping[pc]].append(len(self.data) - 1)
 
     def process_line(self, line):
@@ -286,6 +304,7 @@ class BenchmarkTrace:
         # Computing end of train and validation splits
         train_split = int(self.config.train_split * (len(self.data) - self.config.sequence_length)) + self.config.sequence_length
         valid_split = int((self.config.train_split + self.config.valid_split) * (len(self.data) - self.config.sequence_length)) + self.config.sequence_length
+        print('VALID INST ID STARTS AROUND ~', self.data[train_split, 0].numpy())
         print('TEST INST ID STARTS AROUND ~', self.data[valid_split, 0].numpy())
 
         return train_split, valid_split
@@ -308,42 +327,6 @@ class BenchmarkTrace:
             where the third axis / dimension is the time dimension
             '''
             hists = []
-
-            # Global Stream Input and Output
-            start, end = idx - self.config.sequence_length - self.config.prediction_depth, idx - self.config.prediction_depth
-            pred_start, pred_end = idx - self.config.sequence_length, idx
-
-            inst_id = self.data[end - 1, 0]
-
-            if self.config.global_stream:
-                # Slide the pc_hist to the left by 1 if using current PC
-                if self.config.use_current_pc:
-                    pc_hist = self.data[start + 1:end + 1, 1]
-                else:
-                    pc_hist = self.data[start:end, 1]
-                page_hist = self.data[start:end, 2]
-                offset_hist = self.data[start:end, 3]
-                hists.append(pc_hist)
-                hists.append(page_hist)
-                hists.append(offset_hist)
-
-            if self.config.global_output:
-                # Multi-label draws from the pages + offsets tensors while
-                # Global stream only can work directly with the data tensor
-                if self.config.multi_label:
-                    if self.config.sequence_loss:
-                        y_page = self.pages[pred_start + 1:pred_end + 1]
-                        y_offset = self.offsets[pred_start + 1:pred_end + 1]
-                    else:
-                        y_page = self.pages[pred_end:pred_end + 1]
-                        y_offset = self.offsets[pred_end:pred_end + 1]
-                else:
-                    if self.config.sequence_loss:
-                        y_page = self.data[pred_start + 1:pred_end + 1, 2]
-                        y_offset = self.data[pred_start + 1:pred_end + 1, 3]
-                    else:
-                        y_page = self.data[pred_end:pred_end + 1, 2]
-                        y_offset = self.data[pred_end:pred_end + 1, 3]
 
             # PC Localized Input and Output
             cur_pc = self.data[idx, 1]
@@ -381,7 +364,7 @@ class BenchmarkTrace:
                         y_page = hist[-1:, 2]
                         y_offset = hist[-1:, 3]
 
-            return inst_id, tf.concat(hists, axis=-1), y_page, y_offset
+            return idx, inst_id, tf.concat(hists, axis=-1), y_page, y_offset
 
         # Closure for generating a reproducible random sequence
         epoch_size = self.config.steps_per_epoch * self.config.batch_size
@@ -455,20 +438,12 @@ class BenchmarkTrace:
         return train_ds, valid_ds, test_ds
 
     # Unmaps the page and offset
-    def unmap(self, x, page, offset, sequence_length):
+    def unmap(self, idx, x, page, offset, sequence_length):
         unmapped_page = self.reverse_page_mapping[page]
 
         # DELTA LOCALIZED
         if isinstance(unmapped_page, str):
-            prev_page = x[2 * sequence_length - 1]
-            prev_offset = x[-1]
-            unmapped_prev_page = self.reverse_page_mapping[prev_page]
-            prev_addr = (unmapped_prev_page << self.config.offset_bits) + prev_offset
-            delta = int(unmapped_page[1:])
-            if unmapped_page[0] == '+':
-                ret_addr = prev_addr + delta
-            else:
-                ret_addr = prev_addr - delta
+            ret_addr = self._apply_delta_to_idx(idx, page, offset)
         else:
             ret_addr = (unmapped_page << self.config.offset_bits) + offset
 
@@ -480,11 +455,11 @@ def read_benchmark_trace(benchmark_path, config):
     '''
     benchmark = BenchmarkTrace(config)
 
-    if benchmark_path.endswith('.txt'):
-        with open(benchmark_path, 'r') as f:
-            benchmark.read_and_process_file(f)
-    elif benchmark_path.endswith('.txt.xz'):
+    if benchmark_path.endswith('.txt.xz'):
         with lzma.open(benchmark_path, mode='rt', encoding='utf-8') as f:
+            benchmark.read_and_process_file(f)
+    else:
+        with open(benchmark_path, 'r') as f:
             benchmark.read_and_process_file(f)
 
     return benchmark
