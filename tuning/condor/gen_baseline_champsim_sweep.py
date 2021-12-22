@@ -78,7 +78,7 @@ def main():
     print(args)
 
     trace_path_dir = args.champsim_trace_dir
-    trace_paths = glob.glob(os.path.join(trace_path_dir, '*/*.[xgb]z')) # all .gz, .xz, or .bz files in a subdir (i.e. spec06/)
+    trace_paths = glob.glob(os.path.join(trace_path_dir, '*.[xgb]z'), recursive=True) # all .gz, .xz, or .bz files in a subdir (i.e. spec06/)
     print('Generating configurations for these traces:', trace_paths)
 
     # Track condor files generated so they can be batch launched later 
