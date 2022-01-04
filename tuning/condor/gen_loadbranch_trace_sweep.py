@@ -19,7 +19,7 @@ from gen_utils import generate, get_parser, load_tuning_config, \
                       permute_variations, permute_trace_paths
 
 # Template for bash script
-SCRIPT = '/u/cmolder/GitHub/voyager-analysis/corr/loadbranch_trace.py'
+SCRIPT = '/u/cmolder/GitHub/voyager-analysis/trace/loadbranch_trace.py'
 PYPATH = '/u/cmolder/GitHub/voyager-analysis/'
 
 SH_TEMPLATE = '''#!/bin/bash
