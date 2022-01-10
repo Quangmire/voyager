@@ -12,7 +12,7 @@ CONDOR_GPU = """
 
 universe=vanilla
 getenv=true
-Rank=Memory
+Rank=Memory >= {memory}
 notification=Error
 notify_user=cmolder@cs.utexas.edu
 error={err_file}
@@ -20,7 +20,7 @@ output={out_file}
 initial_dir={init_dir}
 executable={exe}
 
-requirements=Cuda8 && TARGET.GPUSlot 
+requirements=Cuda8 && TARGET.GPUSlot
 request_GPUs=1
 +GPUJob=true
 
@@ -34,7 +34,7 @@ CONDOR_CPU = """
 
 universe=vanilla
 getenv=true
-Rank=Memory
+Rank=Memory >= {memory}
 notification=Error
 notify_user=cmolder@cs.utexas.edu
 error={err_file}
@@ -53,7 +53,7 @@ def get_parser():
     return parser
     
 
-def generate(gpu=False, **params):
+def generate(gpu=False, memory=0, **params):
     """Generate Condor launch scripts.
     Sourced from: github.com/Quangmire/condor/condor_common.py
     """
