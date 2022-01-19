@@ -224,7 +224,7 @@ class Voyager(tf.keras.Model):
             ])
 
         model.compile(
-            optimizer='adam',
+            optimizer=tf.keras.optimizers.Adam(config.learning_rate),
             loss=loss,
             metrics=metrics,
         )

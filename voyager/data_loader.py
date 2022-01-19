@@ -1,3 +1,4 @@
+from collections import defaultdict
 import lzma
 
 import tensorflow as tf
@@ -28,6 +29,8 @@ class BenchmarkTrace:
         self.cache_lines = {}
         self.cache_lines_idx = {}
         self.orig_addr = [0]
+        self.train_split = None
+        self.valid_split = None
 
     def read_and_process_file(self, f):
         self._read_file(f)
@@ -60,6 +63,12 @@ class BenchmarkTrace:
             if line.startswith('***') or line.startswith('Read'):
                 continue
             inst_id, pc, addr = self.process_line(line)
+            if self.train_split is None and inst_id >= 200 * 1000 * 1000:
+                self.train_split = i
+            elif self.valid_split is None and inst_id >= 225 * 1000 * 1000:
+                self.valid_split = i
+            if inst_id >= 250 * 1000 * 1000:
+                break
             # We want 1 epoch per 50M instructions
             # TODO: Do we want to do every 50M instructions or 50M load instructions?
             if inst_id >= cur_phase * phase_size:
@@ -74,7 +83,7 @@ class BenchmarkTrace:
         n_deltas = 0
         n_total = 0
         n_applicable = 0
-        self.orig = {}
+        self.orig = defaultdict(lambda: (0, 0))
         for i, (inst_id, mapped_pc, mapped_page, offset, pc_data_idx) in enumerate(self.data):
             if i == 0:
                 continue
@@ -175,6 +184,7 @@ class BenchmarkTrace:
                     mapped_pages.append(-1)
                     offsets.append(-1)
             else:
+                '''
                 # PC LOCALIZATION
                 if self.pc_addrs_idx[mapped_pc] < len(self.pc_addrs[mapped_pc]) - 1:
                     self.pc_addrs_idx[mapped_pc] += 1
@@ -185,6 +195,9 @@ class BenchmarkTrace:
                 else:
                     mapped_pages.append(-1)
                     offsets.append(-1)
+                '''
+                mapped_pages.append(-1)
+                offsets.append(-1)
 
             # SPATIAL LOCALIZATION
             # TODO: Possibly need to examine this default distance value to make sure that it
@@ -301,9 +314,10 @@ class BenchmarkTrace:
         return len(self.page_mapping)
 
     def _split_idx(self):
+        pass
         # Computing end of train and validation splits
-        train_split = int(self.config.train_split * (len(self.data) - self.config.sequence_length)) + self.config.sequence_length
-        valid_split = int((self.config.train_split + self.config.valid_split) * (len(self.data) - self.config.sequence_length)) + self.config.sequence_length
+        #train_split = int(self.config.train_split * (len(self.data) - self.config.sequence_length)) + self.config.sequence_length
+        #valid_split = int((self.config.train_split + self.config.valid_split) * (len(self.data) - self.config.sequence_length)) + self.config.sequence_length
         print('VALID INST ID STARTS AROUND ~', self.data[train_split, 0].numpy())
         print('TEST INST ID STARTS AROUND ~', self.data[valid_split, 0].numpy())
 
@@ -415,7 +429,8 @@ class BenchmarkTrace:
             return train_datasets, eval_datasets
 
         # Regular 80-10-10 decomposition
-        train_split, valid_split = self._split_idx()
+        #train_split, valid_split = self._split_idx()
+        train_split, valid_split = self.train_split, self.valid_split
 
         # Put together the datasets
         train_ds = (tf.data.Dataset
