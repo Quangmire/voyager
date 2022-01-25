@@ -12,15 +12,15 @@ def get_parser():
     Returns base parser for scripts
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--benchmark', help='Path to the benchmark trace', required=True)
-    parser.add_argument('--model-path', help='Path to save model checkpoint. If not provided, the model checkpointing is skipped.')
+    parser.add_argument('-b', '--benchmark', help='Path to the benchmark trace', required=True)
+    parser.add_argument('-p', '--model-path', help='Path to save model checkpoint. If not provided, the model checkpointing is skipped.')
+    parser.add_argument('-c', '--config', default='./configs/base.yaml', help='Path to configuration file for the model')
+    parser.add_argument('-r', '--auto-resume', action='store_true', default=False, help='Automatically resume if checkpoint detected')
+    parser.add_argument('-t', '--tb-dir', help='Directory to save TensorBoard logs')
+    parser.add_argument('-n', '--model-name', default='voyager')
     parser.add_argument('--debug', action='store_true', default=False, help='Faster epochs for debugging')
-    parser.add_argument('--config', default='./configs/base.yaml', help='Path to configuration file for the model')
-    parser.add_argument('--print-every', type=int, default=None, help='Print updates every this number of steps. Make sure to set when outputting to a file')
-    parser.add_argument('--auto-resume', action='store_true', default=False, help='Automatically resume if checkpoint detected')
     parser.add_argument('--checkpoint-every', type=int, default=None, help='Save a resume checkpoint every this number of steps')
-    parser.add_argument('--tb-dir', help='Directory to save TensorBoard logs')
-    parser.add_argument('--model-name', default='voyager')
+    parser.add_argument('--print-every', type=int, default=None, help='Print updates every this number of steps. Make sure to set when outputting to a file')
 
     return parser
 

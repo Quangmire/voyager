@@ -1,0 +1,28 @@
+#
+# TUNING SWEEP
+#
+# Reference: https://docs.ray.io/en/latest/tune/api_docs/search_space.html
+pc_embed_size: 
+    values: [16, 32, 64, 128, 256]
+    type: "grid_search"
+page_embed_size:
+    values: [32, 64, 128, 256]
+    type: "grid_search"
+learning_rate: 
+    lower: 0.00001
+    upper: 0.01
+    type: "loguniform"
+batch_size:
+    lower: 16
+    upper: 1024
+    q: 1
+    base: 2
+    type: "qlograndint"
+lstm_size:
+    lower: 16
+    upper: 1024
+    q: 1
+    base: 2
+    type: "qlograndint"
+
+    

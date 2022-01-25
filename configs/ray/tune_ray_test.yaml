@@ -1,0 +1,10 @@
+#
+# TUNING SWEEP
+#
+# Reference: https://docs.ray.io/en/latest/tune/api_docs/search_space.html
+pc_embed_size: 
+    values: [16, 32]
+    type: "grid_search"
+
+
+    

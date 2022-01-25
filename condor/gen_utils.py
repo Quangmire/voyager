@@ -58,6 +58,10 @@ def generate(gpu=False, memory=0, **params):
     Sourced from: github.com/Quangmire/condor/condor_common.py
     """
     base = CONDOR_GPU if gpu else CONDOR_CPU
+    params = {
+        'memory': memory,
+        **params
+    }
     return base.format(**params)
 
 

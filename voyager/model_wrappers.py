@@ -6,6 +6,7 @@ import time
 import keras.backend as K
 import numpy as np
 import tensorflow as tf
+import attrdict
 
 from voyager.callbacks import NBatchLogger, ReduceLROnPlateauWithConfig, ResumeCheckpoint
 from voyager.data_loader import read_benchmark_trace
@@ -502,6 +503,26 @@ class ModelWrapper:
         model_wrapper.setup_callbacks(args)
 
         return model_wrapper
+    
+    @staticmethod
+    def setup_from_ray_config(config):
+        # Model config is already loaded.
+        # Config is generated using raytune.utils.load_tuning_config
+        args = config.args
+        
+        # Load and process benchmark
+        benchmark = read_benchmark_trace(args.benchmark, config)
+        
+        # Create and compile the model
+        model_wrapper = ModelWrapper(config, benchmark, args.model_name, verbosity=1 if args.print_every is None else 2)
+        
+        if args.auto_resume:
+            model_wrapper.restore_checkpoint(args.model_path)
+            
+        model_wrapper.setup_callbacks(args)
+        
+        return model_wrapper
+        
 
 
 # Utility functions for backup and restore
