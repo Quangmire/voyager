@@ -14,6 +14,11 @@ Adapted from [https://github.com/aleczhanshi/neural_hierarchical_sequence](https
   - Spatial Localization
 - Generation code for simulating with the modified ChampSim for the ML
   Prefetching Competition at [https://github.com/Quangmire/ChampSim](https://github.com/Quangmire/ChampSim)
+  
+# WIP Features
+- Tuning Sweeps
+    - HTCondor cluster (`condor/`)
+    - Ray cluster (`ray_tune.py`, example scripts in `raytune/`)
 
 # Missing Features
 - Fine-Tuned Hyperparameters

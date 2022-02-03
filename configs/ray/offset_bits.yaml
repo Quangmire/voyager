@@ -2,9 +2,8 @@
 # TUNING SWEEP
 #
 # Reference: https://docs.ray.io/en/latest/tune/api_docs/search_space.html
-pc_embed_size: 
-    values: [16, 32]
-    type: "choice"
 
-
-    
+offset_bits: 
+    lower: 1
+    upper: 51
+    type: "randint"

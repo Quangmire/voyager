@@ -13,24 +13,8 @@ from voyager.models import Voyager
 # For reproducibility
 tf.random.set_seed(0)
 np.random.seed(0)
+    
 
-def train_voyager(config):
-    """Train/validate an instance of Voyager."""
-    print('Benchmark:')
-    print('    Path  :', config.args.benchmark)
-    print('Model    :')
-    print('    Name  :', config.args.model_name)
-    print('    Config:', config)
-    
-    
-    if config.args.dry_run:
-        return
-
-    model_wrapper = ModelWrapper.setup_from_ray_config(config)
-    model_wrapper.train()
-    
-    
-    
 def get_tuning_parser():
     """Get parser for Ray Tune sweep
     that builds on the default arguments for single-model training.
@@ -46,6 +30,29 @@ def get_tuning_parser():
         action='store_true',
         help='Set up the sweep and print tuning parameters, but do not actually do tuning.'
     )
+    parser.add_argument(
+        '--epochs', 
+        default=None,
+        type=int,
+        help='Maximum number of epochs to train. Will default to the one in <config> if not provided.'
+    )
+    parser.add_argument(
+        '--base-start', 
+        action='store_true',
+        help='Initialize the Bayesian optimization using the config from <config>.'
+    )
+    parser.add_argument(
+        '--grace-period', 
+        default=4,
+        type=int,
+        help='Minimum time (in hours) a trial can run before the median stopping rule can prune it.'
+    )
+    parser.add_argument(
+        '--sweep-name', 
+        default=None,
+        help='Name of sweep (e.g. name it after the trace to tune).'
+    )
+    
     
     return parser
 
@@ -55,6 +62,7 @@ TYPE_DICT = {
     'choice': tune.choice, 
     'loguniform': tune.loguniform, 
     'lograndint': tune.lograndint,
+    'randint': tune.randint,
     'qlograndint': tune.qlograndint,
     'grid_search': tune.grid_search
 }
@@ -72,6 +80,11 @@ def load_tuning_config(args):
     
     with open(args.tuning_config, 'r') as f:
         tuning = attrdict.AttrDict(yaml.safe_load(f))
+        
+    # Build intial config from the base config
+    initial = attrdict.AttrDict({})
+    for k, v in tuning.items():
+        initial[k] = config[k]
 
     # Replace variables in config with Ray Tune tuning counterparts
     for k, v in tuning.items():
@@ -79,6 +92,13 @@ def load_tuning_config(args):
         del v['type']
         config[k] = vclass(**v)
         
-    config.args = args
+    # Replace epochs with args.epochs if provided
+    if args.epochs:
+        config.num_epochs = args.epochs
         
-    return config
+    config.args = args
+    
+    
+    
+        
+    return config, initial
