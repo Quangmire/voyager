@@ -1,3 +1,4 @@
+import argparse
 import os
 import yaml
 import attrdict
@@ -6,7 +7,7 @@ from ray import tune
 import numpy as np
 import tensorflow as tf
 
-from voyager.utils import get_parser, load_config
+from voyager.utils import load_config
 from voyager.model_wrappers import ModelWrapper
 from voyager.models import Voyager
 
@@ -15,13 +16,35 @@ tf.random.set_seed(0)
 np.random.seed(0)
     
 
+        
+    
 def get_tuning_parser():
     """Get parser for Ray Tune sweep
     that builds on the default arguments for single-model training.
     """
-    parser = get_parser() # Base arguments
+    parser = argparse.ArgumentParser()
+    
     parser.add_argument(
-        '--tuning-config', 
+        '-b', '--benchmark', 
+        help='Path to the benchmark trace', 
+        required=True
+    )
+    parser.add_argument(
+        '-c', '--config', 
+        default='./configs/base.yaml', 
+        help='Path to configuration file for the model'
+    )
+    parser.add_argument(
+        '-m', '--model-name', 
+        default='voyager'
+    )
+    parser.add_argument(
+        '-p', '--checkpoint', 
+        action='store_true', 
+        help='Save a model checkpoint every epoch'
+    )
+    parser.add_argument(
+        '-t', '--tuning-config', 
         default='./configs/ray/tune_ray.yaml',
         help='Path to tuning configuration'
     )
@@ -31,7 +54,7 @@ def get_tuning_parser():
         help='Set up the sweep and print tuning parameters, but do not actually do tuning.'
     )
     parser.add_argument(
-        '--epochs', 
+        '-e', '--epochs', 
         default=None,
         type=int,
         help='Maximum number of epochs to train. Will default to the one in <config> if not provided.'
@@ -42,13 +65,13 @@ def get_tuning_parser():
         help='Initialize the Bayesian optimization using the config from <config>.'
     )
     parser.add_argument(
-        '--grace-period', 
+        '-g', '--grace-period', 
         default=4,
         type=int,
         help='Minimum time (in hours) a trial can run before the median stopping rule can prune it.'
     )
     parser.add_argument(
-        '--sweep-name', 
+        '-n', '--sweep-name',
         default=None,
         help='Name of sweep (e.g. name it after the trace to tune).'
     )

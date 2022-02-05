@@ -1,6 +1,7 @@
 import os
 import sys
 import yaml
+import attrdict
 
 # Reduce extraneous TensorFlow output. Needs to occur before tensorflow import
 # NOTE: You may want to unset this if you want to see GPU-related error messages
@@ -27,23 +28,16 @@ np.random.seed(0)
 
 
 def train_voyager(config):
-    # os.chdir('/home/ray/voyager')
-    # os.environ['PYTHONPATH'] = '/home/ray/voyager'
-    # print('======= WORKING DIRECTORY: ========', os.getcwd())
-    # print('======= PYTHONPATH:        ========', os.environ['PYTHONPATH'])
-    # print('STUFF INSIDE:', os.listdir(os.getcwd()))
-    
+    """Train/validate an instance of Voyager."""
     sys.path.append('/home/ray/voyager')
     from voyager.model_wrappers import ModelWrapper
     
-    
-    """Train/validate an instance of Voyager."""
+    config = attrdict.AttrDict(config) # For compatibility with resuming
     print('Benchmark:')
     print('    Path  :', config.args.benchmark)
     print('Model    :')
     print('    Name  :', config.args.model_name)
     print('    Config:', config)
-    
     
     if config.args.dry_run:
         return
@@ -65,7 +59,10 @@ def main():
    
     
     tuning_config, initial_config = load_tuning_config(args)
-    print('Tuning config  :')
+    upload_dest = f'gs://voyager-tune/checkpoints/{os.path.basename(args.tuning_config).replace(".yaml", "")}'
+    
+    print('Checkpoints   :', upload_dest)
+    print('Tuning config :')
     #print('    Workers   :', args.num_workers)
     print('    Name         :', args.sweep_name)
     print('    Path         :', args.tuning_config)
@@ -75,27 +72,39 @@ def main():
     print('    Data         :', tuning_config)
     
     
-    # https://docs.ray.io/en/latest/tune/user-guide.html
-    #ray.init()
+    # https://docs.ray.io/en/latest/tune/user-guide.html   
+    # Bayesian Optimization search using scikit-optimize
     search = SkOptSearch(
-        metric='mean_loss',
-        mode='min',
-        points_to_evaluate=[initial_config] if args.base_start else None # Use base config as intiial start.
+        metric='val_acc',
+        mode='max',
+        points_to_evaluate=[initial_config] if args.base_start else None # Use base config as intial start.
     )
     
+    # Median stopping rule for early termination
     sched = MedianStoppingRule(
-        metric='mean_loss',
-        mode='min',
+        metric='val_acc',
+        mode='max',
         grace_period=args.grace_period * 60 * 60
     )
     
+    # https://docs.ray.io/en/latest/tune/user-guide.html#checkpointing-and-synchronization
+    # Synchronize checkpoints on GCP cloud storage
+    sync_config = tune.SyncConfig(
+        upload_dir=upload_dest
+    ) 
+                         
+    # Run tuning sweep
     analysis = tune.run(
-        train_voyager, # DEBUG
-        config = tuning_config,
-        search_alg = search,
-        scheduler = sched,
-        name = args.sweep_name,
-        resources_per_trial={'gpu': 1},
+        train_voyager,
+        config=tuning_config,
+        search_alg=search,
+        scheduler=sched,
+        sync_config=sync_config,
+        name=args.sweep_name,
+        resources_per_trial={'gpu': 1, 'cpu': 2},
+        checkpoint_score_attr='val_acc',
+        keep_checkpoints_num=5,
+        resume='AUTO'
     )
     
 if __name__ == '__main__':

@@ -8,6 +8,8 @@ import numpy as np
 import tensorflow as tf
 import attrdict
 
+from ray.tune.integration.keras import TuneReportCallback, TuneReportCheckpointCallback
+
 from voyager.callbacks import NBatchLogger, ReduceLROnPlateauWithConfig, ResumeCheckpoint
 from voyager.data_loader import read_benchmark_trace
 from voyager.losses import HierarchicalSequenceLoss, HierarchicalCrossEntropyWithLogitsLoss
@@ -132,16 +134,58 @@ class ModelWrapper:
         # Set-up learning rate decay callback.
         if self.config.learning_rate_decay <= 1:
             print('Notice: Not decaying learning rate. To do so, please provide learning_rate_decay > 1.0 in the config file.')
-
+            
         # Create and add in ResumeCheckpoint
         if args.checkpoint_every is not None:
-            self._callbacks.append(ResumeCheckpoint(
-                    self,
-                    args.checkpoint_every,
-                    args.model_path,
-                    self.step,
+                self._callbacks.append(ResumeCheckpoint(
+                        self,
+                        args.checkpoint_every,
+                        args.model_path,
+                        self.step,
+                    )
                 )
-            )
+                
+                
+    def setup_callbacks_from_ray(self, args):
+         # Set-up batch logger callback.
+        self.batch_logger = NBatchLogger(1, start_epoch=self.epoch, start_step=self.step)
+        self._callbacks.append(self.batch_logger)
+
+        # Set-up learning rate decay callback.
+        if self.config.learning_rate_decay <= 1:
+            print('Notice: Not decaying learning rate. To do so, please provide learning_rate_decay > 1.0 in the config file.')
+            
+        # Set up Tune report and checkpoint callbacks (if from ray tune)
+        if not args.checkpoint:
+            self._callbacks.append(TuneReportCallback(
+                metrics=[
+                    'val_acc', # Single label
+                    'acc',
+                    'page_acc',
+                    'offset_acc',
+                    #'pred_acc', # multi label
+                    #'page_pred_acc',
+                    #'offset_pred_acc',
+                ],
+                on='epoch_end'
+            ))
+            print('Notice: Not checkpointing the model. To do so, please provide flat --checkpoint')
+            
+        else:
+            self._callbacks.append(TuneReportCheckpointCallback(
+                metrics=[
+                    'val_acc', # Single label
+                    'acc',
+                    'page_acc',
+                    'offset_acc',
+                    #'pred_acc', # multi label
+                    #'page_pred_acc',
+                    #'offset_pred_acc',
+                ],
+                filename=args.sweep_name,
+                on='epoch_end'
+            ))
+        
 
     def load(self, model_path):
         if not self.model.built:
@@ -514,12 +558,8 @@ class ModelWrapper:
         benchmark = read_benchmark_trace(args.benchmark, config)
         
         # Create and compile the model
-        model_wrapper = ModelWrapper(config, benchmark, args.model_name, verbosity=1 if args.print_every is None else 2)
-        
-        if args.auto_resume:
-            model_wrapper.restore_checkpoint(args.model_path)
-            
-        model_wrapper.setup_callbacks(args)
+        model_wrapper = ModelWrapper(config, benchmark, args.model_name, verbosity=1)
+        model_wrapper.setup_callbacks_from_ray(args) # Checkpointing is handled by Tune callbacks.
         
         return model_wrapper
         

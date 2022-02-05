@@ -4,7 +4,7 @@
 
 declare -A traces
 
-traces[astar_313b]=200
+traces[astar_313B]=200
 traces[bfs]=50
 traces[cc]=200
 traces[mcf_46B]=100
@@ -16,7 +16,8 @@ traces[xalancbmk_99B]=70
 
 #cd /home/ray/voyager
 for trace in "${!traces[@]}"; do
-    launchcmd="python ray_tune.py -b /home/ray/zhan_traces/load/${trace}.txt -p /home/ray/models/${trace} -c /home/ray/voyager/configs/base.yaml -r --tb-dir /home/ray/tensorboard/${trace} --checkpoint-every 10000 --print-every 100 --tuning-config /home/ray/voyager/configs/ray/offset_bits.yaml --epochs ${traces[$trace]} --base-start --grace-period 6 --sweep-name ${trace}";
+    cd "/home/ray/voyager"
+    launchcmd="python ray_tune.py -b gs://voyager-tune/zhan_traces/load/${trace}.txt -c /home/ray/voyager/configs/base.yaml -p -t /home/ray/voyager/configs/ray/offset_bits.yaml -e ${traces[$trace]} --base-start -g 6 -n ${trace}";
     
     echo;
     echo "=== LAUNCHING SWEEP FOR $trace (on screen $trace) ===";

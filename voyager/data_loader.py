@@ -1,6 +1,7 @@
 import lzma
 
 import tensorflow as tf
+from tensorflow.io.gfile import GFile
 
 from voyager.utils import timefunction
 
@@ -454,11 +455,26 @@ def read_benchmark_trace(benchmark_path, config):
     Reads and processes the trace for a benchmark
     '''
     benchmark = BenchmarkTrace(config)
+    
+    # Accessing file on Google Cloud Storage
+    if benchmark_path.startswith('gs://'):
+        print('Opening benchmark trace using GFile handle...')
+        with GFile(benchmark_path, 'r') as f:
+            
+            if benchmark_path.endswith('txt.xz'):
+                print('Opening benchmark trace using LZMA handle...')
+                with lzma.open(f, mode='rt', encoding='utf-8') as lzf:
+                    benchmark.read_and_process_file(lzf)
+            else:
+                benchmark.read_and_process_file(f)
 
-    if benchmark_path.endswith('.txt.xz'):
+    # Accessing local file (.txt or .txt.xz)
+    elif benchmark_path.endswith('.txt.xz'):
+        print('Opening benchmark trace using LZMA handle...')
         with lzma.open(benchmark_path, mode='rt', encoding='utf-8') as f:
             benchmark.read_and_process_file(f)
     else:
+        print('Opening benchmark trace using open handle...')
         with open(benchmark_path, 'r') as f:
             benchmark.read_and_process_file(f)
 
