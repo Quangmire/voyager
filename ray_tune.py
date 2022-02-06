@@ -21,141 +21,182 @@ import tensorflow as tf
 
 
 from raytune.utils import get_tuning_parser, load_tuning_config
+from voyager.models import Voyager
+from voyager.data_loader import read_benchmark_trace
 
 # For reproducibility
 tf.random.set_seed(0)
 np.random.seed(0)
 
-# TODO : Try custom tune.Trainable class to fix checkpoints resetting.
-
-# def train_voyager(config):
-#     """Train/validate an instance of Voyager."""
-#     sys.path.append('/home/ray/voyager')
-#     from voyager.model_wrappers import ModelWrapper
-    
-#     config = attrdict.AttrDict(config) # For compatibility with resuming
-#     print('Benchmark:')
-#     print('    Path  :', config.args.benchmark)
-#     print('Model    :')
-#     print('    Name  :', config.args.model_name)
-#     print('    Config:', config)
-    
-#     if config.args.dry_run:
-#         return
-
-#     model_wrapper = ModelWrapper.setup_from_ray_config(config)
-#     model_wrapper.train()
 
 class VoyagerTrainable(tune.Trainable):
-    def setup(self, config):
+    
+
+    def _print_trial_parameters(self):
+        print('======== TRIAL PARAMETERS ========')
+        print('Benchmark:')
+        print('    Path       :', self.config.args.benchmark)
+        print('Model:')
+        print('    Name       :', self.config.args.model_name)
+        print('    Path       :', self.model_path)
+        print('Trial:')
+        print('    Name       :', self.trial_name)
+        print('    Auto resume:', self.config.args.auto_resume)
+        print('    Config     :')
+        pretty_print_dict(self.config, indent=8)
+    
+    
+    def setup(self, config, upload_dest = None, sweep_name = None):#, benchmark_obj=None):   
         sys.path.append('/home/ray/voyager')
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # (Try to) reduce extraneous TensorFlow output.
+        from voyager.data_loader import read_benchmark_trace
         from voyager.model_wrappers import ModelWrapper
         
-        config = attrdict.AttrDict(config) # For compatibility with resuming
-        
-        # TODO - Check if we can use the trial name. If not, find a more robust name 
-        # based on the trial parameters.
-        model_path = config.upload_dest + f'/{config.args.sweep_name}/{self.trial_name}_model'
-
-        print('Benchmark:')
-        print('    Path  :', config.args.benchmark)
-        print('Model    :')
-        print('    Name  :', config.args.model_name)
-        print('    Config:', config)
-        print('Trial name:', self.trial_name)
-        print('Model path:', model_path)
-        
-        if config.args.dry_run:
-            return
-        
+        self.config = attrdict.AttrDict(config) # For compatibility with resuming
+        self.model_path = upload_dest + f'/{sweep_name}/{self.trial_name}_model/'
+        self._print_trial_parameters()
+            
+        self.benchmark = read_benchmark_trace(self.config.args.benchmark, self.config)
         self.model_wrapper = ModelWrapper.setup_from_ray_config(
-            config, 
-            model_path = model_path
-        )
-        
+            self.config, 
+            benchmark = self.benchmark,
+            model_path = self.model_path,
+        )  
         
         
     def step(self):
-        """Train Voyager for one epoch.
-        """
-        logs = self.model_wrapper.train_one_epoch()
-        
-        print('[step] LOGS:', logs)
-        return logs
-        
-    def save_checkpoint(self, checkpoint_dir):
-        print('[VoyagerTrainable.save_checkpoint] Entering save checkpoint (no effect)')
-        return # Model wrapper handles checkpointing on a more granular basis for us.
+        # TODOS:
+        # - Fix OOM when reloading from Tune checkpoint (I think that Tune
+        #   is rebuilding the model's Tensorflow graph for some reason.)
+        # - Fix checkpoint resuming when the last checkpoint ended the epoch
+        #   (does not advance to next epoch, and repeats validation).
+        return self.model_wrapper.train_one_epoch()
     
-    def load_checkpoint(self, checkpoint_dir):
-        print('[VoyagerTrainable.load_checkpoint] Loading from checkpoint...')
-        self.model_wrapper.restore_checkpoint(self.model_wrapper.model_path)
+    
+    def cleanup(self):
+        print('CLEANUP')
+        del self.model_wrapper
+        
+        
+    # def step(self):
+    #     """Train Voyager for one epoch.
+    #     """
+    #     result = self.model_wrapper.train_one_epoch()
+    #     return result
+    
 
+# def train_voyager(config):
+#     sys.path.append('/home/ray/voyager')
+#     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # (Try to) reduce extraneous TensorFlow output.
+#     from voyager.model_wrappers import ModelWrapper
+
+#     config = attrdict.AttrDict(config) # For compatibility with resuming
+
+#     # TODO - Check if we can use the trial name. If not, find a more robust name 
+#     # based on the trial parameters.
+    
+#     trial_name = 'DUMMY_NAME'
+
+#     model_path = config.upload_dest + f'/{config.args.sweep_name}/{trial_name}_model/'
+
+#     print('======== TRIAL PARAMETERS ========')
+#     print('Benchmark:')
+#     print('    Path       :', config.args.benchmark)
+#     print('Model:')
+#     print('    Name       :', config.args.model_name)
+#     print('    Path       :', model_path)
+#     print('Trial:')
+#     print('    Name       :', trial_name)
+#     print('    Auto resume:', config.args.auto_resume)
+#     print('    Config     :')
+#     pretty_print_dict(config, indent=8)
+
+#     model_wrapper = ModelWrapper.setup_from_ray_config(config, model_path = model_path)   
+#     start_epoch = model_wrapper.epoch
+    
+#     for epoch in range(start_epoch, config.num_epochs):
+#         yield model_wrapper.train_one_epoch() # Sends metrics to Tune
+    
+
+    
+def pretty_print_dict(dic, indent=0):
+    for k, v in dic.items():
+        print(f'{" "*indent}{k}={v}')
+    
     
 
 def main():
     args = get_tuning_parser().parse_args()
     
-    #print('Ray cluster  :')
-    #print('    Address:', args.address)
-    print('Dry run?      :', args.dry_run)
-    print('Auto resume?  :', args.auto_resume)
-    print('Benchmark     :')
-    print('    Path      :', args.benchmark)
-    print('Model config  :')
-    print('    Path      :', args.config)
-   
-    
     tuning_config, initial_config = load_tuning_config(args)
-    upload_dest = f'gs://voyager-tune/checkpoints/{os.path.basename(args.tuning_config).replace(".yaml", "")}'
-    tuning_config['upload_dest'] = upload_dest
     
-    print('Checkpoints   :', upload_dest)
-    print('Tuning config :')
-    #print('    Workers   :', args.num_workers)
-    print('    Name         :', args.sweep_name)
-    print('    Path         :', args.tuning_config)
-    print('    Max epochs   :', tuning_config.num_epochs)
-    print('    Base start?  :', args.base_start)
-    print('    Grace period :', args.grace_period, 'hours')
-    print('    Data         :', tuning_config)
+    print('======== SWEEP PARAMETERS ========')
+    print('Benchmark:')
+    print('    Path        :', args.benchmark)
+    print('Model config:')
+    print('    Path        :', args.config)
+    print('Sweep:')
+    print('    Name        :', args.sweep_name)
+    print('    Checkpoints :', tuning_config.upload_dest)
+    print('    Auto resume?:', args.auto_resume)
+    print('Tuning:')
+    print('    Path        :', args.tuning_config)
+    print('    Max epochs  :', tuning_config.num_epochs)
+    print('    Base start? :', args.base_start)
+    print('    Grace period:', args.grace_period, 'hours')
+    print('    Data        :')
+    pretty_print_dict(tuning_config, indent=8)
     
     
     # https://docs.ray.io/en/latest/tune/user-guide.html   
     # Bayesian Optimization search using scikit-optimize
-    search = SkOptSearch(
-        metric='val_acc',
-        mode='max',
-        points_to_evaluate=[initial_config] if args.base_start else None # Use base config as intial start.
-    )
+    #search = SkOptSearch(
+    #    metric='val_acc',
+    #    mode='max',
+    #    points_to_evaluate=[initial_config] if args.base_start else None # Use base config as intial start.
+    #)
+    search = None
     
     # Median stopping rule for early termination
-    sched = MedianStoppingRule(
-        metric='val_acc',
-        mode='max',
-        grace_period=args.grace_period * 60 * 60
-    )
+    #sched = MedianStoppingRule(
+    #    metric='val_acc',
+    #    mode='max',
+    #    grace_period=args.grace_period * 60 * 60
+    #)
+    sched = None
     
     # https://docs.ray.io/en/latest/tune/user-guide.html#checkpointing-and-synchronization
     # Synchronize checkpoints on GCP cloud storage
     sync_config = tune.SyncConfig(
-        upload_dir=upload_dest
+        upload_dir=tuning_config.upload_dest
     ) 
+    
+    #executor = VoyagerExecutor()
+    
+    #from ray.tune.utils import validate_save_restore
+    #validate_save_restore(VoyagerTrainable)
+    
+    #benchmark = read_benchmark_trace(args.benchmark)
+    #ref = ray.put(benchmark)
                          
     # Run tuning sweep
     analysis = tune.run(
-        #train_voyager,
-        VoyagerTrainable,
+        tune.with_parameters(
+           VoyagerTrainable,
+           upload_dest = tuning_config.upload_dest,
+           sweep_name = args.sweep_name,
+           #benchmark_obj = benchmark
+        ),
+        #VoyagerTrainable,
         config=tuning_config,
         search_alg=search,
         scheduler=sched,
         sync_config=sync_config,
         name=args.sweep_name,
         resources_per_trial={'gpu': 1, 'cpu': 2},
-        checkpoint_score_attr='val_acc',
-        keep_checkpoints_num=5,
+        #trial_executor=executor,
         resume='AUTO' if args.auto_resume else False,
-        fail_fast='raise'
+        fail_fast='raise',
     )
     
 if __name__ == '__main__':

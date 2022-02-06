@@ -10,8 +10,7 @@ from tensorflow.io import gfile
 
 import attrdict
 
-from ray.tune.integration.keras import TuneReportCallback, TuneReportCheckpointCallback
-
+from ray.tune.integration.keras import TuneReportCheckpointCallback
 from voyager.callbacks import NBatchLogger, ReduceLROnPlateauWithConfig, ResumeCheckpoint
 from voyager.data_loader import read_benchmark_trace
 from voyager.losses import HierarchicalSequenceLoss, HierarchicalCrossEntropyWithLogitsLoss
@@ -160,41 +159,30 @@ class ModelWrapper:
         if self.config.learning_rate_decay <= 1:
             print('Notice: Not decaying learning rate. To do so, please provide learning_rate_decay > 1.0 in the config file.')
             
-        # Set up Tune report and checkpoint callbacks
+        # Set up Tune report callback
+        # self._callbacks.append(TuneReportCheckpointCallback(
+        #     metrics=[
+        #         'acc',
+        #         'page_acc',
+        #         'offset_acc',
+        #         'val_acc',
+        #         'val_page_acc',
+        #         'val_offset_acc',
+        #         'loss',
+        #         'val_loss'
+        #     ],
+        #     filename=self.model_path.rstrip('/') + '_checkpoint',
+        #     on='epoch_end'
+        # ))
+            
+        # Set up checkpoint callback
         if args.checkpoint_every is None or model_path is None:
-            self._callbacks.append(TuneReportCallback(
-                metrics=[
-                    'val_acc', # Single label
-                    'acc',
-                    'page_acc',
-                    'offset_acc',
-                    #'pred_acc', # multi label
-                    #'page_pred_acc',
-                    #'offset_pred_acc',
-                ],
-                on='epoch_end'
-            ))
             print('Notice: Not checkpointing the model. To do so, please provide --checkpoint-every')
-            
         else:
-            self._callbacks.append(TuneReportCheckpointCallback(
-                metrics=[
-                    'val_acc', # Single label
-                    'acc',
-                    'page_acc',
-                    'offset_acc',
-                    #'pred_acc', # multi label
-                    #'page_pred_acc',
-                    #'offset_pred_acc',
-                ],
-                filename=args.sweep_name,
-                on='epoch_end' # Report on epoch end, but checkpoint every <args.checkpoint_every> steps.
-            ))
-            
             self._callbacks.append(ResumeCheckpoint(
                     self,
                     args.checkpoint_every,
-                    self.model_path,
+                    model_path,
                     self.step,
                 )
             )
@@ -276,6 +264,14 @@ class ModelWrapper:
             self.callbacks.on_epoch_end(self.epoch)
         self.callbacks.on_train_end(logs)
         
+    @staticmethod
+    def _clean_logs(logs):
+        return {
+            k: K.get_value(logs[k]) for k in [
+                'acc', 'loss', 'offset_acc', 'page_acc', 
+                'val_acc', 'val_loss', 'val_offset_acc', 'val_page_acc'
+        ]}
+        
         
     def train_one_epoch(self, train_ds=None, valid_ds=None, callbacks=None):
         """Train incrementally (one epoch, from current step if we aren't starting fresh.)
@@ -320,14 +316,14 @@ class ModelWrapper:
                     logs.update(val_logs)
                 self.callbacks.on_epoch_end(self.epoch - 1, logs)
                 epoch_ended = True
-                return logs # Return instead of moving to the next epoch.
+                return ModelWrapper._clean_logs(logs) # Return instead of moving to the next epoch.
             
         # Make sure epochs are ended properly when we run out of data prematurely
         if not epoch_ended:
             self.epoch += 1
             self.callbacks.on_epoch_end(self.epoch)
         self.callbacks.on_train_end(logs)
-        return {k: float(v) for k, v in logs.items()}
+        return ModelWrapper._clean_logs(logs)
 
         
     def train_online(self, prefetch_file=None, callbacks=None):
@@ -512,13 +508,14 @@ class ModelWrapper:
         open_fn = gfile.GFile if on_gcp else open
         
         # Paths to main resume and backup resume
-        checkpoint_path = os.path.join(model_path, 'resume')
-        backup_path = os.path.join(model_path, 'resume_backup')
+        checkpoint_path = os.path.join(model_path, 'resume/')
+        backup_path = os.path.join(model_path, 'resume_backup/')
 
         # If checkpoint already exists, copy to backup path
         if on_gcp and gfile_exists(os.path.join(checkpoint_path, 'done')):
-            os.system(f'gsutil cp -r {checkpoint_path} {backup_path}') # TODO - Do this more elegantly using google library
-            os.system(f'gsutil rm {os.path.join(checkpoint_path, "done")}')
+            # TODO - Do this more elegantly using google library
+            os.system(f'gsutil cp -r {checkpoint_path} {backup_path} > /dev/null')         
+            os.system(f'gsutil rm -f {os.path.join(checkpoint_path, "done")} > /dev/null') # Remove the done file from the current checkpoint path
         elif os.path.exists(os.path.join(checkpoint_path, 'done')):
             shutil.copytree(checkpoint_path, backup_path)
             os.remove(os.path.join(checkpoint_path, 'done')) # Remove the done file from the current checkpoint path
@@ -545,12 +542,13 @@ class ModelWrapper:
             json.dump(backup_data, f, indent=4)
 
         # Create empty done file to signify that we're done
-        with open_fn(os.path.join(checkpoint_path, 'done'), 'w') as _:
-            pass
+        with open_fn(os.path.join(checkpoint_path, 'done'), 'w') as f:
+            print('', file=f)
 
         # Safe to remove backup now
         if on_gcp and gfile_exists(backup_path):
-            os.system(f'gsutil rm -rf {backup_path}')
+            # TODO - Do this more elegantly using google library
+            os.system(f'gsutil rm -rf {backup_path} > /dev/null')
         elif os.path.exists(backup_path):
             shutil.rmtree(backup_path)
 
@@ -562,8 +560,8 @@ class ModelWrapper:
         check_fn = gfile_exists if on_gcp else os.path.exists
         
         # Paths to main resume and backup resume
-        checkpoint_path = os.path.join(model_path, 'resume')
-        backup_path = os.path.join(model_path, 'resume_backup')
+        checkpoint_path = os.path.join(model_path, 'resume/')
+        backup_path = os.path.join(model_path, 'resume_backup/')
 
         # Check main path and then backup
         if check_fn(os.path.join(checkpoint_path, 'done')):
@@ -573,6 +571,7 @@ class ModelWrapper:
         else:
             print('No valid checkpoints', end='')
             return
+        print(f'Valid checkpoint found at {load_path}')
 
         # Restore callbacks, metrics, optimizer state
         with open_fn(os.path.join(load_path, 'data.json')) as f:
@@ -588,7 +587,7 @@ class ModelWrapper:
             elif name == 'phase':
                 self.phase = config
             elif name == 'optim':
-                with open_fn(os.path.join(load_path, 'optim_weights.npy'), 'r') as f:
+                with open_fn(os.path.join(load_path, 'optim_weights.npy'), 'rb') as f:
                     weights = np.load(f, allow_pickle=True)
 
                 for k, v in config.items():
@@ -609,6 +608,8 @@ class ModelWrapper:
 
         # Reload model state
         self.model.load(os.path.join(load_path, 'model'))
+        
+        print(f'Model state restored. epoch={self.epoch}, step={self.step}, phase={self.phase}')
 
     @staticmethod
     def setup_from_args(args):
@@ -632,20 +633,19 @@ class ModelWrapper:
         return model_wrapper
     
     @staticmethod
-    def setup_from_ray_config(config, model_path=None):
+    def setup_from_ray_config(config, benchmark = None, model_path=None):
         # Model config is already loaded.
         # Config is generated using raytune.utils.load_tuning_config
         args = config.args
-        assert args.auto_resume is not None, 'DEBUG: Could not find auto_resume in config.'
         
         # Load and process benchmark
-        benchmark = read_benchmark_trace(args.benchmark, config)
+        if not benchmark:
+            benchmark = read_benchmark_trace(args.benchmark, config)
         
         # Create and compile the model
-        model_wrapper = ModelWrapper(config, benchmark, args.model_name, verbosity=1)
+        model_wrapper = ModelWrapper(config, benchmark, args.model_name, verbosity=1 if args.print_every is None else 2)
         
         if args.auto_resume:
-            print('Restoring from checkpoint...')
             model_wrapper.restore_checkpoint(model_path)
         
         model_wrapper.setup_callbacks_from_ray(args, model_path=model_path) # Checkpointing is handled by Tune callbacks.

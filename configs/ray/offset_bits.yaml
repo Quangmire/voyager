@@ -5,5 +5,5 @@
 
 offset_bits: 
     lower: 1
-    upper: 51
+    upper: 16
     type: "randint"

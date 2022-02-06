@@ -51,11 +51,6 @@ def get_tuning_parser():
         help='Path to tuning configuration'
     )
     parser.add_argument(
-        '--dry-run', 
-        action='store_true',
-        help='Set up the sweep and print tuning parameters, but do not actually do tuning.'
-    )
-    parser.add_argument(
         '-e', '--epochs', 
         default=None,
         type=int,
@@ -83,6 +78,12 @@ def get_tuning_parser():
         action='store_true', 
         default=False, 
         help='Automatically resume if checkpoint detected'
+    )
+    parser.add_argument(
+        '--print-every', 
+        default=None,
+        type=int,
+        help='Print updates every this number of steps. Make sure to set when outputting to a file'
     )
     
     return parser
@@ -127,6 +128,9 @@ def load_tuning_config(args):
     if args.epochs:
         config.num_epochs = args.epochs
         
+    # Add args and upload_dest
+    upload_dest = f'gs://voyager-tune/checkpoints/{os.path.basename(args.tuning_config).replace(".yaml", "")}'
     config.args = args
+    config.upload_dest = upload_dest
     
     return config, initial
