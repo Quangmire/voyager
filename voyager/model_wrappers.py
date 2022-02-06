@@ -6,6 +6,8 @@ import time
 import keras.backend as K
 import numpy as np
 import tensorflow as tf
+from tensorflow.io import gfile
+
 import attrdict
 
 from ray.tune.integration.keras import TuneReportCallback, TuneReportCheckpointCallback
@@ -14,7 +16,7 @@ from voyager.callbacks import NBatchLogger, ReduceLROnPlateauWithConfig, ResumeC
 from voyager.data_loader import read_benchmark_trace
 from voyager.losses import HierarchicalSequenceLoss, HierarchicalCrossEntropyWithLogitsLoss
 from voyager.models import get_model
-from voyager.utils import load_config, create_prefetch_file, timefunction
+from voyager.utils import load_config, create_prefetch_file, timefunction, gfile_exists
 
 
 class ModelWrapper:
@@ -146,17 +148,20 @@ class ModelWrapper:
                 )
                 
                 
-    def setup_callbacks_from_ray(self, args):
+    def setup_callbacks_from_ray(self, args, model_path=None):
          # Set-up batch logger callback.
         self.batch_logger = NBatchLogger(1, start_epoch=self.epoch, start_step=self.step)
         self._callbacks.append(self.batch_logger)
+        
+        # Set up model path using Ray Tune configuration.
+        self.model_path = model_path
 
         # Set-up learning rate decay callback.
         if self.config.learning_rate_decay <= 1:
             print('Notice: Not decaying learning rate. To do so, please provide learning_rate_decay > 1.0 in the config file.')
             
-        # Set up Tune report and checkpoint callbacks (if from ray tune)
-        if not args.checkpoint:
+        # Set up Tune report and checkpoint callbacks
+        if args.checkpoint_every is None or model_path is None:
             self._callbacks.append(TuneReportCallback(
                 metrics=[
                     'val_acc', # Single label
@@ -169,7 +174,7 @@ class ModelWrapper:
                 ],
                 on='epoch_end'
             ))
-            print('Notice: Not checkpointing the model. To do so, please provide flat --checkpoint')
+            print('Notice: Not checkpointing the model. To do so, please provide --checkpoint-every')
             
         else:
             self._callbacks.append(TuneReportCheckpointCallback(
@@ -183,8 +188,16 @@ class ModelWrapper:
                     #'offset_pred_acc',
                 ],
                 filename=args.sweep_name,
-                on='epoch_end'
+                on='epoch_end' # Report on epoch end, but checkpoint every <args.checkpoint_every> steps.
             ))
+            
+            self._callbacks.append(ResumeCheckpoint(
+                    self,
+                    args.checkpoint_every,
+                    self.model_path,
+                    self.step,
+                )
+            )
         
 
     def load(self, model_path):
@@ -192,6 +205,7 @@ class ModelWrapper:
             self.model(tf.zeros((1, self.model.sequence_length * 3,)))
         self.model.load(model_path)
 
+        
     @tf.function
     def train_step(self, x, y):
         # Single train step
@@ -212,6 +226,7 @@ class ModelWrapper:
             logs[metric.name] = metric.result()
         return logs
 
+    
     def train(self, train_ds=None, valid_ds=None, callbacks=None):
         # Create default datasets if there are None
         if train_ds is None:
@@ -260,7 +275,61 @@ class ModelWrapper:
             self.epoch += 1
             self.callbacks.on_epoch_end(self.epoch)
         self.callbacks.on_train_end(logs)
+        
+        
+    def train_one_epoch(self, train_ds=None, valid_ds=None, callbacks=None):
+        """Train incrementally (one epoch, from current step if we aren't starting fresh.)
+        """
+        # Create default datasets if there are None
+        if train_ds is None:
+            train_ds, valid_ds, test_ds = self.benchmark.split(self.epoch, self.step)
+        
+        print(f'[ModelWrapper.train_one_epoch]: Training from epoch {self.epoch}, step {self.step}')
+        
+        if self.epoch == 0:
+            # Create callbacks list anew
+            self._init_callbacks(callbacks if callbacks is not None else [])
+            self.callbacks.on_train_begin()
+            
+        # "Start" epoch and reset metrics, if this is actually the beginning of the epoch.
+        if self.step == 0:
+            self.callbacks.on_epoch_begin(self.epoch)
+            self.reset_metrics()
+            
+        epoch_ended = False
+        logs = {}
+        
+        # Main training loop
+        for _, _, x, y_page, y_offset in train_ds:
+            epoch_ended = False
+            self.step += 1
 
+            # Needed for resume, without this, there is an off-by-one error
+            if self.step <= self.config.steps_per_epoch:
+                # Do one train step
+                self.callbacks.on_train_batch_begin(self.step)
+                logs = self.train_step(x, (y_page, y_offset))
+                self.callbacks.on_train_batch_end(self.step, logs)
+
+            # Finish the epoch.
+            if self.step >= self.config.steps_per_epoch:
+                self.step, self.epoch = 0, self.epoch + 1
+                # Evaluate on validation dataset if it was passed in
+                if valid_ds is not None:
+                    val_logs = self.evaluate([valid_ds], training=True)
+                    logs.update(val_logs)
+                self.callbacks.on_epoch_end(self.epoch - 1, logs)
+                epoch_ended = True
+                return logs # Return instead of moving to the next epoch.
+            
+        # Make sure epochs are ended properly when we run out of data prematurely
+        if not epoch_ended:
+            self.epoch += 1
+            self.callbacks.on_epoch_end(self.epoch)
+        self.callbacks.on_train_end(logs)
+        return {k: float(v) for k, v in logs.items()}
+
+        
     def train_online(self, prefetch_file=None, callbacks=None):
         # Create datasets
         train_datasets, eval_datasets = self.benchmark.split(self.epoch % self.config.num_epochs_online, self.step, online=True, start_phase=self.phase)
@@ -434,20 +503,25 @@ class ModelWrapper:
         if test:
             datasets.append(test_ds)
         return datasets
-
+                
 
     # Need the newline if run using the progress bar instead of NBatchLogger
     @timefunction('\nCreating checkpoint')
     def create_checkpoint(self, model_path):
+        on_gcp = model_path.startswith('gs://')
+        open_fn = gfile.GFile if on_gcp else open
+        
         # Paths to main resume and backup resume
         checkpoint_path = os.path.join(model_path, 'resume')
         backup_path = os.path.join(model_path, 'resume_backup')
 
         # If checkpoint already exists, copy to backup path
-        if os.path.exists(os.path.join(checkpoint_path, 'done')):
+        if on_gcp and gfile_exists(os.path.join(checkpoint_path, 'done')):
+            os.system(f'gsutil cp -r {checkpoint_path} {backup_path}') # TODO - Do this more elegantly using google library
+            os.system(f'gsutil rm {os.path.join(checkpoint_path, "done")}')
+        elif os.path.exists(os.path.join(checkpoint_path, 'done')):
             shutil.copytree(checkpoint_path, backup_path)
-            # Remove the done file from the current checkpoint path
-            os.remove(os.path.join(checkpoint_path, 'done'))
+            os.remove(os.path.join(checkpoint_path, 'done')) # Remove the done file from the current checkpoint path
 
         # Backup model
         self.model.save_weights(os.path.join(checkpoint_path, 'model'))
@@ -463,37 +537,45 @@ class ModelWrapper:
             backup_data[name] = config_to_python(item.get_config())
 
         # Optimizer weights aren't saved in get_config() unfortunately
-        np.save(os.path.join(checkpoint_path, 'optim_weights.npy'), self.model.optimizer.get_weights(), allow_pickle=True)
+        with open_fn(os.path.join(checkpoint_path, 'optim_weights.npy'), 'w') as f:
+            np.save(f, self.model.optimizer.get_weights(), allow_pickle=True)
 
         # Dump to json
-        with open(os.path.join(checkpoint_path, 'data.json'), 'w') as f:
+        with open_fn(os.path.join(checkpoint_path, 'data.json'), 'w') as f:
             json.dump(backup_data, f, indent=4)
 
         # Create empty done file to signify that we're done
-        with open(os.path.join(checkpoint_path, 'done'), 'w') as _:
+        with open_fn(os.path.join(checkpoint_path, 'done'), 'w') as _:
             pass
 
         # Safe to remove backup now
-        if os.path.exists(backup_path):
+        if on_gcp and gfile_exists(backup_path):
+            os.system(f'gsutil rm -rf {backup_path}')
+        elif os.path.exists(backup_path):
             shutil.rmtree(backup_path)
 
+                
     @timefunction('Restoring checkpoint')
     def restore_checkpoint(self, model_path):
+        on_gcp = model_path.startswith('gs://')
+        open_fn = gfile.GFile if on_gcp else open
+        check_fn = gfile_exists if on_gcp else os.path.exists
+        
         # Paths to main resume and backup resume
         checkpoint_path = os.path.join(model_path, 'resume')
         backup_path = os.path.join(model_path, 'resume_backup')
 
         # Check main path and then backup
-        if os.path.exists(os.path.join(checkpoint_path, 'done')):
+        if check_fn(os.path.join(checkpoint_path, 'done')):
             load_path = checkpoint_path
-        elif os.path.exists(os.path.join(backup_path, 'done')):
+        elif check_fn(os.path.join(backup_path, 'done')):
             load_path = backup_path
         else:
             print('No valid checkpoints', end='')
             return
 
         # Restore callbacks, metrics, optimizer state
-        with open(os.path.join(load_path, 'data.json')) as f:
+        with open_fn(os.path.join(load_path, 'data.json')) as f:
             backup_data = json.load(f)
 
         for name, config in backup_data.items():
@@ -506,7 +588,8 @@ class ModelWrapper:
             elif name == 'phase':
                 self.phase = config
             elif name == 'optim':
-                weights = np.load(os.path.join(load_path, 'optim_weights.npy'), allow_pickle=True)
+                with open_fn(os.path.join(load_path, 'optim_weights.npy'), 'r') as f:
+                    weights = np.load(f, allow_pickle=True)
 
                 for k, v in config.items():
                     setattr(self.model.optimizer, k, v)
@@ -549,17 +632,23 @@ class ModelWrapper:
         return model_wrapper
     
     @staticmethod
-    def setup_from_ray_config(config):
+    def setup_from_ray_config(config, model_path=None):
         # Model config is already loaded.
         # Config is generated using raytune.utils.load_tuning_config
         args = config.args
+        assert args.auto_resume is not None, 'DEBUG: Could not find auto_resume in config.'
         
         # Load and process benchmark
         benchmark = read_benchmark_trace(args.benchmark, config)
         
         # Create and compile the model
         model_wrapper = ModelWrapper(config, benchmark, args.model_name, verbosity=1)
-        model_wrapper.setup_callbacks_from_ray(args) # Checkpointing is handled by Tune callbacks.
+        
+        if args.auto_resume:
+            print('Restoring from checkpoint...')
+            model_wrapper.restore_checkpoint(model_path)
+        
+        model_wrapper.setup_callbacks_from_ray(args, model_path=model_path) # Checkpointing is handled by Tune callbacks.
         
         return model_wrapper
         

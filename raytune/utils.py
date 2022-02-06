@@ -36,12 +36,14 @@ def get_tuning_parser():
     )
     parser.add_argument(
         '-m', '--model-name', 
-        default='voyager'
+        default='voyager',
+        help='Name of the model (NOT TESTED). Default: "voyager"'
     )
     parser.add_argument(
-        '-p', '--checkpoint', 
-        action='store_true', 
-        help='Save a model checkpoint every epoch'
+        '-p', '--checkpoint-every', 
+        type=int,
+        default=None,
+        help='Save a model checkpoint every <checkpoint_every> steps.'
     )
     parser.add_argument(
         '-t', '--tuning-config', 
@@ -57,11 +59,12 @@ def get_tuning_parser():
         '-e', '--epochs', 
         default=None,
         type=int,
-        help='Maximum number of epochs to train. Will default to the one in <config> if not provided.'
+        help='Maximum number of epochs to train. Default: num_epochs in <config>.'
     )
     parser.add_argument(
         '--base-start', 
         action='store_true',
+        default=False,
         help='Initialize the Bayesian optimization using the config from <config>.'
     )
     parser.add_argument(
@@ -75,7 +78,12 @@ def get_tuning_parser():
         default=None,
         help='Name of sweep (e.g. name it after the trace to tune).'
     )
-    
+    parser.add_argument(
+        '-r', '--auto-resume', 
+        action='store_true', 
+        default=False, 
+        help='Automatically resume if checkpoint detected'
+    )
     
     return parser
 
@@ -121,7 +129,4 @@ def load_tuning_config(args):
         
     config.args = args
     
-    
-    
-        
     return config, initial

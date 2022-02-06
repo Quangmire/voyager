@@ -26,32 +26,80 @@ from raytune.utils import get_tuning_parser, load_tuning_config
 tf.random.set_seed(0)
 np.random.seed(0)
 
+# TODO : Try custom tune.Trainable class to fix checkpoints resetting.
 
-def train_voyager(config):
-    """Train/validate an instance of Voyager."""
-    sys.path.append('/home/ray/voyager')
-    from voyager.model_wrappers import ModelWrapper
+# def train_voyager(config):
+#     """Train/validate an instance of Voyager."""
+#     sys.path.append('/home/ray/voyager')
+#     from voyager.model_wrappers import ModelWrapper
     
-    config = attrdict.AttrDict(config) # For compatibility with resuming
-    print('Benchmark:')
-    print('    Path  :', config.args.benchmark)
-    print('Model    :')
-    print('    Name  :', config.args.model_name)
-    print('    Config:', config)
+#     config = attrdict.AttrDict(config) # For compatibility with resuming
+#     print('Benchmark:')
+#     print('    Path  :', config.args.benchmark)
+#     print('Model    :')
+#     print('    Name  :', config.args.model_name)
+#     print('    Config:', config)
     
-    if config.args.dry_run:
-        return
+#     if config.args.dry_run:
+#         return
 
-    model_wrapper = ModelWrapper.setup_from_ray_config(config)
-    model_wrapper.train()
+#     model_wrapper = ModelWrapper.setup_from_ray_config(config)
+#     model_wrapper.train()
 
+class VoyagerTrainable(tune.Trainable):
+    def setup(self, config):
+        sys.path.append('/home/ray/voyager')
+        from voyager.model_wrappers import ModelWrapper
+        
+        config = attrdict.AttrDict(config) # For compatibility with resuming
+        
+        # TODO - Check if we can use the trial name. If not, find a more robust name 
+        # based on the trial parameters.
+        model_path = config.upload_dest + f'/{config.args.sweep_name}/{self.trial_name}_model'
+
+        print('Benchmark:')
+        print('    Path  :', config.args.benchmark)
+        print('Model    :')
+        print('    Name  :', config.args.model_name)
+        print('    Config:', config)
+        print('Trial name:', self.trial_name)
+        print('Model path:', model_path)
+        
+        if config.args.dry_run:
+            return
+        
+        self.model_wrapper = ModelWrapper.setup_from_ray_config(
+            config, 
+            model_path = model_path
+        )
+        
+        
+        
+    def step(self):
+        """Train Voyager for one epoch.
+        """
+        logs = self.model_wrapper.train_one_epoch()
+        
+        print('[step] LOGS:', logs)
+        return logs
+        
+    def save_checkpoint(self, checkpoint_dir):
+        print('[VoyagerTrainable.save_checkpoint] Entering save checkpoint (no effect)')
+        return # Model wrapper handles checkpointing on a more granular basis for us.
+    
+    def load_checkpoint(self, checkpoint_dir):
+        print('[VoyagerTrainable.load_checkpoint] Loading from checkpoint...')
+        self.model_wrapper.restore_checkpoint(self.model_wrapper.model_path)
+
+    
 
 def main():
     args = get_tuning_parser().parse_args()
     
     #print('Ray cluster  :')
     #print('    Address:', args.address)
-    print('Dry run?       :', args.dry_run)
+    print('Dry run?      :', args.dry_run)
+    print('Auto resume?  :', args.auto_resume)
     print('Benchmark     :')
     print('    Path      :', args.benchmark)
     print('Model config  :')
@@ -60,6 +108,7 @@ def main():
     
     tuning_config, initial_config = load_tuning_config(args)
     upload_dest = f'gs://voyager-tune/checkpoints/{os.path.basename(args.tuning_config).replace(".yaml", "")}'
+    tuning_config['upload_dest'] = upload_dest
     
     print('Checkpoints   :', upload_dest)
     print('Tuning config :')
@@ -95,7 +144,8 @@ def main():
                          
     # Run tuning sweep
     analysis = tune.run(
-        train_voyager,
+        #train_voyager,
+        VoyagerTrainable,
         config=tuning_config,
         search_alg=search,
         scheduler=sched,
@@ -104,7 +154,8 @@ def main():
         resources_per_trial={'gpu': 1, 'cpu': 2},
         checkpoint_score_attr='val_acc',
         keep_checkpoints_num=5,
-        resume='AUTO'
+        resume='AUTO' if args.auto_resume else False,
+        fail_fast='raise'
     )
     
 if __name__ == '__main__':

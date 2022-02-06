@@ -3,6 +3,7 @@ import re
 import shutil
 import subprocess
 import time
+from google.cloud import storage
 
 import attrdict
 import yaml
@@ -137,3 +138,18 @@ def pick_gpu_lowest_memory():
     best_memory, best_gpu = sorted(memory_gpu_map)[0]
 
     return best_gpu
+
+
+def gfile_exists(path):
+    """Helper function to determine if a path exists on a GCP (gs:// address)
+
+    Source: https://stackoverflow.com/questions/13525482/how-to-check-if-file-exists-in-google-cloud-storage
+    """
+    client = storage.Client()
+    bucket_name = path.split('/')[2]
+    target = '/'.join(path.split('/')[3:])
+    
+    #print(f'[gfile_exists]: path={path}, bucket={bucket_name}, target={target}')
+
+    bucket = client.bucket(bucket_name)
+    return storage.Blob(bucket=bucket, name=target).exists(client)
