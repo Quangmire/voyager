@@ -17,7 +17,7 @@ traces[xalancbmk_99B]=70
 #cd /home/ray/voyager
 for trace in "${!traces[@]}"; do
     cd "/home/ray/voyager"
-    launchcmd="python ray_tune.py -b gs://voyager-tune/zhan_traces/load/${trace}.txt -c /home/ray/voyager/configs/base.yaml -p 1000 -t /home/ray/voyager/configs/ray/offset_bits.yaml -e ${traces[$trace]} --base-start -g 4 -n ${trace} --print-every 10 -s 2";
+    launchcmd="python ray_tune.py -b gs://voyager-tune/zhan_traces/load/${trace}.txt -c /home/ray/voyager/configs/base_fast.yaml -p 1000 -t /home/ray/voyager/configs/ray/offset_bits.yaml -e ${traces[$trace]} --base-start -g 4 -n offset_bits_fast_${trace} --print-every 10 -s 1";
     
     echo;
     echo "=== LAUNCHING SWEEP FOR $trace (on screen $trace) ===";

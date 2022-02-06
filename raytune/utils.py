@@ -32,23 +32,7 @@ def get_tuning_parser():
     parser.add_argument(
         '-c', '--config', 
         default='./configs/base.yaml', 
-        help='Path to configuration file for the model'
-    )
-    parser.add_argument(
-        '-m', '--model-name', 
-        default='voyager',
-        help='Name of the model (NOT TESTED). Default: "voyager"'
-    )
-    parser.add_argument(
-        '-p', '--checkpoint-every', 
-        type=int,
-        default=None,
-        help='Save a model checkpoint every <checkpoint_every> steps.'
-    )
-    parser.add_argument(
-        '-t', '--tuning-config', 
-        default='./configs/ray/tune_ray.yaml',
-        help='Path to tuning configuration'
+        help='Path to configuration file for the model. Default: ./configs/base.yaml'
     )
     parser.add_argument(
         '-e', '--epochs', 
@@ -57,16 +41,15 @@ def get_tuning_parser():
         help='Maximum number of epochs to train. Default: num_epochs in <config>.'
     )
     parser.add_argument(
-        '--base-start', 
-        action='store_true',
-        default=False,
-        help='Initialize the Bayesian optimization using the config from <config>.'
-    )
-    parser.add_argument(
         '-g', '--grace-period', 
         default=4,
         type=int,
-        help='Minimum time (in hours) a trial can run before the median stopping rule can prune it.'
+        help='Minimum time (in hours) a trial can run before the median stopping rule can prune it. Default: 4'
+    )
+    parser.add_argument(
+        '-m', '--model-name', 
+        default='voyager',
+        help='Name of the model (NOT TESTED). Default: voyager'
     )
     parser.add_argument(
         '-n', '--sweep-name',
@@ -74,17 +57,41 @@ def get_tuning_parser():
         help='Name of sweep (e.g. name it after the trace to tune).'
     )
     parser.add_argument(
+        '-p', '--checkpoint-every', 
+        type=int,
+        default=None,
+        help='Save a model checkpoint every <checkpoint_every> steps. Default: No checkpointing'
+    )
+    parser.add_argument(
         '-r', '--auto-resume', 
         action='store_true', 
         default=False, 
-        help='Automatically resume if checkpoint detected'
+        help='Automatically resume if checkpoint detected.'
+    )
+    parser.add_argument(
+        '-s', '--num-samples', 
+        default=1,
+        type=int,
+        help='Number of simultaneous samples to queue for the tuning sweep. Default: 1'
+    )
+    parser.add_argument(
+        '-t', '--tuning-config', 
+        default='./configs/ray/tune_ray.yaml',
+        help='Path to tuning configuration. Default: ./configs/ray/tune_ray.yaml'
     )
     parser.add_argument(
         '--print-every', 
         default=None,
         type=int,
-        help='Print updates every this number of steps. Make sure to set when outputting to a file'
+        help='Print statistics every <print-every> batches. Make sure to set when outputting to a file. Default: Progress bar'
     )
+    parser.add_argument(
+        '--base-start', 
+        action='store_true',
+        default=False,
+        help='Initialize the Bayesian optimization using the config from <config>.'
+    )
+    
     
     return parser
 

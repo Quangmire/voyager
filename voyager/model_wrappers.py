@@ -273,7 +273,7 @@ class ModelWrapper:
         ]}
         
         
-    def train_one_epoch(self, train_ds=None, valid_ds=None, callbacks=None):
+    def train_one_epoch(self, train_ds=None, valid_ds=None, callbacks=None, model_path = None):
         """Train incrementally (one epoch, from current step if we aren't starting fresh.)
         """
         # Create default datasets if there are None
@@ -282,9 +282,10 @@ class ModelWrapper:
         
         print(f'[ModelWrapper.train_one_epoch]: Training from epoch {self.epoch}, step {self.step}')
         
+        # Create callbacks list anew
+        self._init_callbacks(callbacks if callbacks is not None else [])
+        
         if self.epoch == 0:
-            # Create callbacks list anew
-            self._init_callbacks(callbacks if callbacks is not None else [])
             self.callbacks.on_train_begin()
             
         # "Start" epoch and reset metrics, if this is actually the beginning of the epoch.
@@ -316,6 +317,12 @@ class ModelWrapper:
                     logs.update(val_logs)
                 self.callbacks.on_epoch_end(self.epoch - 1, logs)
                 epoch_ended = True
+                
+                # If checkpoints are enabled, do one now (so we don't have to repeat validation)
+                if self.config.args.checkpoint_every is not None and model_path is not None:
+                    self.create_checkpoint(model_path)
+                
+                
                 return ModelWrapper._clean_logs(logs) # Return instead of moving to the next epoch.
             
         # Make sure epochs are ended properly when we run out of data prematurely
@@ -323,6 +330,10 @@ class ModelWrapper:
             self.epoch += 1
             self.callbacks.on_epoch_end(self.epoch)
         self.callbacks.on_train_end(logs)
+        
+        # If checkpoints are enabled, do one now (so we don't have to repeat validation)
+        if self.config.args.checkpoint_every is not None and model_path is not NOne:
+            self.create_checkpoint(model_path)
         return ModelWrapper._clean_logs(logs)
 
         

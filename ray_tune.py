@@ -13,7 +13,7 @@ from ray import tune
 # Ray
 ray.init(address='auto')
 
-
+from numba import cuda
 from ray.tune.suggest.skopt import SkOptSearch
 from ray.tune.schedulers import MedianStoppingRule
 import numpy as np
@@ -52,6 +52,12 @@ class VoyagerTrainable(tune.Trainable):
         from voyager.data_loader import read_benchmark_trace
         from voyager.model_wrappers import ModelWrapper
         
+        # For compatibility with resuming,
+        # clear GPU memory (Tune tries to reload the model on its own,
+        # but our Trainable already handles this.
+        print('Clearing GPU memory...')
+        cuda.get_current_device().reset()
+        
         self.config = attrdict.AttrDict(config) # For compatibility with resuming
         self.model_path = upload_dest + f'/{sweep_name}/{self.trial_name}_model/'
         self._print_trial_parameters()
@@ -66,11 +72,9 @@ class VoyagerTrainable(tune.Trainable):
         
     def step(self):
         # TODOS:
-        # - Fix OOM when reloading from Tune checkpoint (I think that Tune
-        #   is rebuilding the model's Tensorflow graph for some reason.)
         # - Fix checkpoint resuming when the last checkpoint ended the epoch
         #   (does not advance to next epoch, and repeats validation).
-        return self.model_wrapper.train_one_epoch()
+        return self.model_wrapper.train_one_epoch(model_path = self.model_path)
     
     
     def cleanup(self):
@@ -150,20 +154,18 @@ def main():
     
     # https://docs.ray.io/en/latest/tune/user-guide.html   
     # Bayesian Optimization search using scikit-optimize
-    #search = SkOptSearch(
-    #    metric='val_acc',
-    #    mode='max',
-    #    points_to_evaluate=[initial_config] if args.base_start else None # Use base config as intial start.
-    #)
-    search = None
+    search = SkOptSearch(
+       metric='val_acc',
+       mode='max',
+       points_to_evaluate=[initial_config] if args.base_start else None # Use base config as intial start.
+    )
     
     # Median stopping rule for early termination
-    #sched = MedianStoppingRule(
-    #    metric='val_acc',
-    #    mode='max',
-    #    grace_period=args.grace_period * 60 * 60
-    #)
-    sched = None
+    sched = MedianStoppingRule(
+       metric='val_acc',
+       mode='max',
+       grace_period=args.grace_period * 60 * 60
+    )
     
     # https://docs.ray.io/en/latest/tune/user-guide.html#checkpointing-and-synchronization
     # Synchronize checkpoints on GCP cloud storage
@@ -171,10 +173,6 @@ def main():
         upload_dir=tuning_config.upload_dest
     ) 
     
-    #executor = VoyagerExecutor()
-    
-    #from ray.tune.utils import validate_save_restore
-    #validate_save_restore(VoyagerTrainable)
     
     #benchmark = read_benchmark_trace(args.benchmark)
     #ref = ray.put(benchmark)
@@ -188,6 +186,7 @@ def main():
            #benchmark_obj = benchmark
         ),
         #VoyagerTrainable,
+        num_samples=args.num_samples,
         config=tuning_config,
         search_alg=search,
         scheduler=sched,
