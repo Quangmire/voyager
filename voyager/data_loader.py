@@ -4,6 +4,7 @@ import tensorflow as tf
 from tensorflow.io.gfile import GFile
 
 from voyager.utils import timefunction
+from tqdm import tqdm
 
 class BenchmarkTrace:
     '''
@@ -50,13 +51,33 @@ class BenchmarkTrace:
         self.pc_data = tf.ragged.constant(self.pc_data)
 
     @timefunction('Reading in data')
-    def _read_file(self, f):
+    def _read_file(self, f, use_tqdm=False):
         '''
         Reads and processes the data in the benchmark trace files
         '''
         cur_phase = 1
         phase_size = 50 * 1000 * 1000
-        for i, line in enumerate(f):
+        
+        if use_tqdm:
+            # Count number of lines
+            n_lines = sum(1 for _ in f)
+            f.seek(0)
+
+            it = tqdm(
+                enumerate(f),
+                dynamic_ncols=True,
+                total=n_lines,
+                unit='line',
+                unit_scale=True
+            )
+            print(f'\nReading {n_lines} lines...')
+                
+        else:
+            it = enumerate(f)
+            
+        
+        
+        for i, line in it:
             # Necessary for some extraneous lines in MLPrefetchingCompetition traces
             if line.startswith('***') or line.startswith('Read'):
                 continue
