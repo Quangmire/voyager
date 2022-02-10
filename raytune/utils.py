@@ -140,4 +140,4 @@ def load_tuning_config(args):
     config.args = args
     config.upload_dest = upload_dest
     
-    return config, initial
+    return config, initial, tuning

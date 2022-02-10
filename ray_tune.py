@@ -122,12 +122,18 @@ def get_local_benchmark_copy(benchmark_path):
     return local_copy
 
     
+def name_trial(trial):
+    global sweep_config
+    return '_'.join([f'{k}={trial.config[k]}' for k in sweep_config.keys()] + [trial.trial_id])
+        
     
-
+    
+sweep_config = None
 def main():
     args = get_tuning_parser().parse_args()
     
-    tuning_config, initial_config = load_tuning_config(args)
+    global sweep_config
+    tuning_config, initial_config, sweep_config = load_tuning_config(args)
     
     print(f'''
 ======== SWEEP PARAMETERS ========
@@ -168,6 +174,7 @@ Tuning:
     sync_config = tune.SyncConfig(
         upload_dir=tuning_config.upload_dest
     ) 
+    
                          
     # Run tuning sweep
     analysis = tune.run(
@@ -183,6 +190,7 @@ Tuning:
         scheduler=sched,
         sync_config=sync_config,
         name=args.sweep_name,
+        trial_name_creator=name_trial,
         resources_per_trial={'gpu': 1, 'cpu': 2},
         max_failures=50, # Retry 50 times if we fail (e.g. preemption), but give up after (in case it's a fundamental model problem like OOM)
         resume='AUTO' if args.auto_resume else False,

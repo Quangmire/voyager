@@ -149,7 +149,7 @@ class ModelWrapper:
                 
     def setup_callbacks_from_ray(self, args, model_path=None):
          # Set-up batch logger callback.
-        self.batch_logger = NBatchLogger(1, start_epoch=self.epoch, start_step=self.step)
+        self.batch_logger = NBatchLogger(args.print_every, start_epoch=self.epoch, start_step=self.step)
         self._callbacks.append(self.batch_logger)
         
         # Set up model path using Ray Tune configuration.
