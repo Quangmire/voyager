@@ -11,7 +11,7 @@ num_epochs: 500
 num_epochs_online: 20
 steps_per_epoch: 100 # Much faster
 train_split: 0.8
-valid_split: 0.01
+valid_split: 0.1
 multi_label: False
 # Input Parameters
 sequence_loss: False    # Train with sequence loss instead of cross entropy on last timestep
