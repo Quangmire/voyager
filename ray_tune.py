@@ -20,7 +20,7 @@ from ray.tune.schedulers import MedianStoppingRule
 import numpy as np
 import tensorflow as tf
 
-from raytune.utils import get_tuning_parser, load_tuning_config, name_trial
+from raytune.utils import get_tuning_parser, load_tuning_config
 from voyager.models import Voyager
 from voyager.data_loader import read_benchmark_trace
 
