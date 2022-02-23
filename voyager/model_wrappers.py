@@ -265,12 +265,33 @@ class ModelWrapper:
         self.callbacks.on_train_end(logs)
         
     @staticmethod
-    def _clean_logs(logs):
-        return {
-            k: K.get_value(logs[k]) for k in [
-                'acc', 'loss', 'offset_acc', 'page_acc', 
-                'val_acc', 'val_loss', 'val_offset_acc', 'val_page_acc'
-        ]}
+    def _clean_logs(log):
+        KEYS = { # Keys to check, and default values if they are missing (will print to log).
+            'acc': 0.0,
+            'loss': float('inf'),
+            'offset_acc': 0.0,
+            'page_acc': 0.0,
+            'val_acc': 0.0,
+            'val_loss': float('inf'),
+            'val_offset_acc': 0.0,
+            'val_page_acc': 0.0,
+        }
+        
+        #return {
+        #    k: K.get_value(log[k]) for k in [
+        #        'acc', 'loss', 'offset_acc', 'page_acc', 
+        #        'val_acc', 'val_loss', 'val_offset_acc', 'val_page_acc'
+        #]}
+    
+        cleaned_log = {}
+        for k in KEYS.keys():
+            try:
+                cleaned_log[k] = K.get_value(log[k])
+            except KeyError:
+                print(f'[WARNING] Key {k} not found in Tensorflow log. Replacing with default value {KEYS[k]}')
+                cleaned_log[k] = KEYS[k]
+            
+        return cleaned_log
         
         
     def train_one_epoch(self, train_ds=None, valid_ds=None, callbacks=None, model_path = None):
@@ -332,7 +353,7 @@ class ModelWrapper:
         self.callbacks.on_train_end(logs)
         
         # If checkpoints are enabled, do one now (so we don't have to repeat validation)
-        if self.config.args.checkpoint_every is not None and model_path is not NOne:
+        if self.config.args.checkpoint_every is not None and model_path is not None:
             self.create_checkpoint(model_path)
         return ModelWrapper._clean_logs(logs)
 
