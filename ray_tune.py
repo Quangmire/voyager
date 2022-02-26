@@ -208,6 +208,7 @@ Tuning:
         name=args.sweep_name,
         trial_name_creator=name_trial,
         resources_per_trial={'gpu': 1, 'cpu': 2},
+        stop={'training_iteration': tuning_config.num_epochs},
         max_failures=-1, # Check configurations for GPU OOM errors, or else your sweep won't finish.
         resume='AUTO' if args.auto_resume else False,
         #fail_fast='raise',
