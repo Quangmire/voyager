@@ -4,6 +4,6 @@
 # Reference: https://docs.ray.io/en/latest/tune/api_docs/search_space.html
 
 offset_bits: 
-    lower: 1
+    lower: 4
     upper: 16
     type: "randint"

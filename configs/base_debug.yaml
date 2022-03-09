@@ -1,4 +1,4 @@
-# Fast version of Base config (fewer steps per epoch), for sweep
+# Fast version of Base config (fewer steps per epoch), for debugging
 # purposes.
 
 name: "Base Voyager"
@@ -9,9 +9,9 @@ learning_rate_decay: 2
 min_learning_rate: 0.0001
 num_epochs: 500
 num_epochs_online: 20
-steps_per_epoch: 2000 # Much faster
+steps_per_epoch: 100 # Much much faster
 train_split: 0.8
-valid_split: 0.05
+valid_split: 0.01 # Much much faster
 multi_label: False
 # Input Parameters
 sequence_loss: False    # Train with sequence loss instead of cross entropy on last timestep

@@ -33,6 +33,12 @@ class BenchmarkTrace:
         self.orig_addr = [0]
         self.train_split = None
         self.valid_split = None
+        
+        assert 0. <= config.valid_split <= 1., f'valid_split ({config.valid_split}) must be between 0.0 and 1.0'
+        assert 0. <= config.train_split <= 1., f'train_split ({config.train_split}) must be between 0.0 and 1.0'
+        assert 0. <= (config.train_split + config.valid_split) <= 1, f'valid_split ({config.valid_split}) and train_split ({config.train_split}) must sum to between 0.0 and 1.0 (rest given to train_split)'
+        self.valid_pct = config.valid_split
+        self.train_pct = config.train_split
 
     def read_and_process_file(self, f):
         self._read_file(f)
@@ -85,9 +91,9 @@ class BenchmarkTrace:
             if line.startswith('***') or line.startswith('Read'):
                 continue
             inst_id, pc, addr = self.process_line(line)
-            if self.train_split is None and inst_id >= 200 * 1000 * 1000:
+            if self.train_split is None and inst_id >= (250 * self.train_pct) * 1000 * 1000:
                 self.train_split = i
-            elif self.valid_split is None and inst_id >= 225 * 1000 * 1000:
+            elif self.valid_split is None and inst_id >= (250 * (self.train_pct + self.valid_pct)) * 1000 * 1000:
                 self.valid_split = i
             if inst_id >= 250 * 1000 * 1000:
                 break
@@ -97,6 +103,8 @@ class BenchmarkTrace:
                 self.online_cutoffs.append(i)
                 cur_phase += 1
             self.process_row(i, inst_id, pc, addr)
+        
+        print(f'[DEBUG] data_loader._read_file train_split={self.train_split} valid_split={self.valid_split}')
 
     def _replace_with_deltas(self):
         prev_addr = {}
