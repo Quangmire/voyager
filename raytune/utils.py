@@ -16,6 +16,20 @@ tf.random.set_seed(0)
 np.random.seed(0)
     
 
+def get_eval_parser():
+    """Get parser for Ray Tune evaluation.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        'ray_results_dir',
+        help='Local path to the ray results directory',
+    )
+    parser.add_argument(
+        '-o', '--output',
+        help='Output file for the .csv results.',
+        default='./results.csv'
+    )
+    return parser
         
     
 def get_tuning_parser():

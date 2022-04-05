@@ -1,3 +1,5 @@
+#!/bin/python
+
 """Perform a Ray Tune sweep.
 """
 
@@ -5,6 +7,7 @@ import os
 import sys
 import yaml
 import attrdict
+import skopt
 
 # Reduce extraneous TensorFlow output. Needs to occur before tensorflow import
 # NOTE: You may want to unset this if you want to see GPU-related error messages
@@ -16,6 +19,7 @@ from ray import tune
 # Ray
 ray.init(address='auto')
 from ray.tune.suggest.skopt import SkOptSearch
+from ray.tune.suggest.hyperopt import HyperOptSearch
 from ray.tune.schedulers import MedianStoppingRule
 import numpy as np
 import tensorflow as tf
@@ -171,12 +175,22 @@ Tuning:
 {pretty_dict_string(tuning_config, indent=8)}
     ''')
 
-    # https://docs.ray.io/en/latest/tune/user-guide.html   
-    # Bayesian Optimization search using scikit-optimize
-    search = SkOptSearch(
-       metric='val_acc',
-       mode='max',
-       points_to_evaluate=[initial_config] if args.base_start else None # Use base config as intial start.
+    # scikit-optimize BO search
+    # - https://docs.ray.io/en/latest/tune/user-guide.html   
+    # - https://scikit-optimize.github.io/stable/modules/generated/skopt.Optimizer.html
+    # search = SkOptSearch(
+    #    metric='val_acc',
+    #    mode='max',
+    #    points_to_evaluate=[initial_config] if args.base_start else None # Use base config as intial start.
+    # )
+    
+    # HyperOpt Search
+    # - https://docs.ray.io/en/master/tune/api_docs/suggestion.html#hyperopt-tune-suggest-hyperopt-hyperoptsearch
+    # - http://hyperopt.github.io/hyperopt/
+    search = HyperOptSearch(
+        metric='val_acc',
+        mode='max',
+        points_to_evaluate=[initial_config] if args.base_start else None # Use base config as intial start.
     )
     
     # Median stopping rule for early termination
@@ -209,7 +223,7 @@ Tuning:
         trial_name_creator=name_trial,
         resources_per_trial={'gpu': 1, 'cpu': 2},
         stop={'training_iteration': tuning_config.num_epochs},
-        max_failures=-1, # Check configurations for GPU OOM errors, or else your sweep won't finish.
+        max_failures=1000, # Check configurations for GPU OOM errors, or else your sweep won't finish.
         resume='AUTO' if args.auto_resume else False,
         #fail_fast='raise',
     )

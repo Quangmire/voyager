@@ -17,7 +17,7 @@ traces[soplex_66B]=15
 #cd /home/ray/voyager
 for trace in "${!traces[@]}"; do
     cd "/home/ray/voyager"
-    launchcmd="python ray_tune.py -b gs://voyager-tune/zhan_traces/load/${trace}.txt -c /home/ray/voyager/configs/base_fast.yaml -p 1000 -t /home/ray/voyager/configs/ray/offset_bits.yaml -e ${traces[$trace]} --base-start -n ${trace} --print-every 250 -s 12";
+    launchcmd="python ray_tune.py -b gs://voyager-tune/zhan_traces/load/${trace}.txt -c /home/ray/voyager/configs/base_fast.yaml -p 1000 -t /home/ray/voyager/configs/ray/offset_bits.yaml -e ${traces[$trace]} --base-start -n ${trace} --print-every 250 -s 12 -r";
     
     echo;
     echo "=== LAUNCHING SWEEP FOR $trace (on screen $trace) ===";

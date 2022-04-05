@@ -5,3 +5,4 @@ __pycache__/
 models*/
 load_traces
 logs*/
+*results.csv
