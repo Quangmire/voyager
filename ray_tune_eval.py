@@ -6,6 +6,7 @@ Reference: https://docs.ray.io/en/latest/tune/api_docs/analysis.html
 import os
 import glob
 
+import numpy as np
 import pandas as pd
 import ray
 from ray.tune import ExperimentAnalysis
@@ -40,6 +41,7 @@ Output:
         
         run_df['run'] = run_name
         run_df = run_df[columns]
+        run_df = run_df.replace(np.inf, np.nan)
         run_df = run_df.dropna(axis=0)
         
         df = df.append(run_df)
